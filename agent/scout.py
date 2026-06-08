@@ -45,13 +45,18 @@ def _json(text):
 def scout(n_queries=4):
     ctx = ("=== OVERVIEW ===\n" + _read("overview.md") +
            "\n\n=== ANTI-PATTERNS (avoid) ===\n" + _read("patterns/META-LESSONS.md")[:2500] +
-           "\n\n=== ALREADY TESTED ===\n" + _read("index.md"))
+           "\n\n=== DATA WE OWN (prefer ideas buildable on these) ===\n" + _read("DATA_CATALOG.md") +
+           "\n\n=== ALREADY TESTED / SURFACED ===\n" + _read("index.md"))
     # 1. generate targeted search queries aimed at wiki gaps / untested promising directions
     q_raw = _pi(f"{ctx}\n\nYou are a quant research scout. Based on the wiki's UNTESTED promising "
                 f"directions and gaps, produce {n_queries} web-search queries that would surface NEW, "
                 f"specific, backtestable strategies/edges that real practitioners or recent research "
-                f"actually use (risk premia, structural edges, combinations) — NOT generic. Avoid "
-                f"anything already tested or closed. Return ONLY a JSON array of query strings.")
+                f"actually use (risk premia, structural edges, combinations) — NOT generic. "
+                f"DIVERSIFY HARD: each query a DISTINCT premium AND market — span e.g. one equity "
+                f"factor/event, one rates/credit, one volatility, one cross-asset/commodity/FX. Do NOT "
+                f"cluster (the wiki is ALREADY heavy on crypto funding-carry and PEAD — deliberately look "
+                f"ELSEWHERE). Prefer edges buildable on the OWNED data above. Avoid anything tested/closed. "
+                f"Return ONLY a JSON array of query strings.")
     queries = _json(q_raw) or ["systematic risk premia retail backtest 2025 carry trend vol",
                                "crypto delta neutral funding basis strategy 2025"]
     queries = queries[:n_queries]
@@ -64,7 +69,9 @@ def scout(n_queries=4):
                 f'"candidates": [{{"title":"...","premium":"...","market":"...","why_promising":"...",'
                 f'"data_feasible":"free/owned?","not_already_tested":"...","source":"..."}}], '
                 f'"premia_updates": ["short factual updates to add to premia/market pages, with source"], '
-                f'"contradictions": ["any finding that contradicts a wiki claim"]}}')
+                f'"contradictions": ["any finding that contradicts a wiki claim"]}}\n'
+                f'Surface DIVERSE candidates across DIFFERENT premia/markets (NOT multiple variants of one '
+                f'theme); PREFER ideas buildable on the OWNED data above (mark data_feasible accordingly).')
     findings = _json(d_raw) or {"summary": d_raw[:600], "candidates": [], "premia_updates": [], "contradictions": []}
     _ingest(queries, findings)
     return findings
