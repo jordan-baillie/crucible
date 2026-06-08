@@ -35,7 +35,9 @@ USE ONLY these tested imports (do NOT download raw / reinvent). Full data invent
   list from OWNED Sharadar TICKERS (delisted INCLUDED -> survivorship-clean). Pass its output to sep_panel.
   **CRITICAL for cross-sectional EQUITY: you MUST bound the universe — pass top_n (e.g. us_universe(..., top_n=1000)
   = 1000 most-liquid names) and/or marketcap='Large'/'Mid'. NEVER run the full ~16k common-stock universe through
-  the rails — the CPCV is pathologically slow + OOM'd at 14.5GB. Target ~few-hundred to ~1500 liquid names.**
+  the rails — the CPCV is pathologically slow + OOM'd at 14.5GB. Target ~few-hundred to ~1500 liquid names.** Cross-sectional ANOMALIES (issuance, value, accruals, low-vol…) live in SMALL/ILLIQUID names — test
+  them in us_universe(marketcap='Small' or 'Mid', top_n=~1500), NOT the largest liquid names (there they
+  are arbitraged away -> false nulls).
 - sf1(tickers, fields, dimension='ARQ') -> OWNED Sharadar fundamentals. Use 'datekey' (filing date) as the as-of
   date to avoid look-ahead (NEVER calendardate). Fields e.g. eps, revenue, bvps, marketcap, pe, de, roe.
 - yf_panel(tickers, start) -> Close panel (FREE; futures/ETFs/intl indices — NOT US single stocks).
