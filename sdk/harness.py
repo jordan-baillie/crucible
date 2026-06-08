@@ -63,9 +63,6 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
 
     # --- the gates (non-bypassable) ---
     bundle = ri.assemble_bundle(search.values, trades, grid_returns=grid)
-    n_fam = ri.distinct_families(extra=spec.family)
-    bar = ri.promote_dsr(n_fam)
-    tiers = ri.evaluate_tiers(bundle, promote_dsr=bar)
     dep = ri.deployment_sanity(trades, strategy_meta={"max_positions": spec.deploy_max_positions})
     b = bundle if isinstance(bundle, dict) else {}
 
@@ -73,8 +70,23 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     deg = (h_sh - s_sh) / abs(s_sh) * 100 if s_sh else None
     h_pass, h_reasons = ri.holdout_gate(h_sh, deg, dep["passed"])
 
-    tier = str(tiers.get("tier"))
-    passed_all = tier.upper() == "PROMOTE" and h_pass and dep["passed"]
+    # --- FDR accounting + registry append: ATOMIC across all agents (multi-agent safe).
+    #     The heavy CPCV (assemble_bundle) ran above OUTSIDE the lock; here we serialize only
+    #     count -> bar -> evaluate -> append (milliseconds). This is what keeps the shared FDR
+    #     bar correct when N agents test in parallel -- the non-negotiable Phase-3 invariant. ---
+    from sdk.locks import FileLock
+    with FileLock("fdr-registry", ttl=120):
+        n_fam = ri.distinct_families(extra=spec.family)
+        bar = ri.promote_dsr(n_fam)
+        tiers = ri.evaluate_tiers(bundle, promote_dsr=bar)
+        tier = str(tiers.get("tier"))
+        passed_all = tier.upper() == "PROMOTE" and h_pass and dep["passed"]
+        try:
+            ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": tier,
+                                    "dsr": b.get("dsr"), "promote_dsr": bar, "n_families": n_fam,
+                                    "holdout_touched": True, "passed_all": passed_all})
+        except Exception:
+            pass
 
     verdict = {
         "id": spec.id, "family": spec.family, "title": spec.title, "markets": spec.markets,
@@ -87,14 +99,6 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "full_sharpe": round(_sharpe(full_ret), 3), "full_maxdd": round(_maxdd(full_ret), 3),
         "n_trades": len(trades), "PASSED_ALL_GATES": passed_all,
     }
-
-    # --- FDR registry append (the shared multiple-testing memory) ---
-    try:
-        ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": tier,
-                                "dsr": b.get("dsr"), "promote_dsr": bar, "n_families": n_fam,
-                                "holdout_touched": True, "passed_all": passed_all})
-    except Exception:
-        pass
 
     if write_wiki:
         from sdk.wiki import write_experiment
