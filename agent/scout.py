@@ -25,8 +25,8 @@ def _pi(prompt):
 
 def _brave(query, n=5):
     try:
-        r = subprocess.run(["node", BRAVE, query, "-n", str(n)], capture_output=True, text=True, timeout=90)
-        return r.stdout[:4000]
+        from agent.brave import rich_search_text
+        return rich_search_text(query)
     except Exception as e:
         return f"(search failed: {e})"
 
