@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly Hephaestus forge (3 smiths) — replaces the single hephaestus-cycle
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
