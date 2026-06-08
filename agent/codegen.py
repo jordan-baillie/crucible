@@ -39,7 +39,11 @@ USE ONLY these tested imports (do NOT download raw / reinvent). Full data invent
 - trend_returns(**p) -> (returns, trades) the validated 21-market CTA trend hedge leg.
 - carry_returns() -> the crypto funding-carry near-miss leg (daily returns Series).
 - inv_vol_position(signal_df, rets, target_vol, vol_lb, max_pos, rebalance) -> weekly-held lagged positions.
-- For a COMBINATION: build each leg's daily returns, align (pd.concat axis=1 dropna), vol-match each, blend.
+- For a COMBINATION: build each leg's daily returns, align (pd.concat axis=1 dropna), vol-match, blend.
+- BUT test the premium STANDALONE first. Only ADD a hedge (e.g. trend) if it CUTS THE TAIL without
+  diluting the standalone Sharpe — size it to MINIMISE drag, NOT a reflexive 50/50. A ~0-Sharpe hedge
+  blended 50/50 HALVES the edge (it sank a real +0.27-Sharpe credit-carry premium to ~0). Prefer the
+  standalone leg or a SMALL tail-overlay; do not pair with trend just because the wiki pattern says so.
 Be economical and correct. OWNED/FREE data only (see DATA_CATALOG.md). The harness runs ALL the rails; you only produce returns+trades.
 '''
 

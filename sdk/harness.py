@@ -67,8 +67,14 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     b = bundle if isinstance(bundle, dict) else {}
 
     s_sh, h_sh = _sharpe(search), _sharpe(holdout)
-    deg = (h_sh - s_sh) / abs(s_sh) * 100 if s_sh else None
+    deg = (h_sh - s_sh) / abs(s_sh) * 100 if abs(s_sh) > 0.1 else None
     h_pass, h_reasons = ri.holdout_gate(h_sh, deg, dep["passed"])
+    # SEARCH-SANITY: a holdout "pass" is meaningless if there was no in-sample edge to confirm.
+    # Guards the degenerate case search_sharpe~=0 -> degradation blows up -> spurious holdout pass
+    # (this falsely flagged a credit-carry book that the trend over-blend had sunk to ~0 as a near-miss).
+    if abs(s_sh) < 0.3:
+        h_pass = False
+        h_reasons = list(h_reasons) + [f"search Sharpe {s_sh:.2f} < 0.3 — no in-sample edge to confirm"]
 
     # --- FDR accounting + registry append: ATOMIC across all agents (multi-agent safe).
     #     The heavy CPCV (assemble_bundle) ran above OUTSIDE the lock; here we serialize only
