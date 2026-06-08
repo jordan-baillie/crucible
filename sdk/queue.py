@@ -27,9 +27,15 @@ def _read_all() -> list[dict]:
 
 def _write_all(items: list[dict]) -> None:
     QUEUE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = QUEUE.with_suffix(".tmp")
-    tmp.write_text("".join(json.dumps(i) + "\n" for i in items))
-    tmp.replace(QUEUE)  # atomic on POSIX
+    # UNIQUE temp per writer (not a shared queue.tmp) — defends against any stale-steal lock
+    # edge where two writers race on the same temp path (caused a FileNotFoundError on replace).
+    tmp = QUEUE.parent / f".queue.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp"
+    try:
+        tmp.write_text("".join(json.dumps(i) + "\n" for i in items))
+        tmp.replace(QUEUE)  # atomic on POSIX
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
 
 
 def enqueue(proposal: dict) -> str:

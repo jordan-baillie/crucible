@@ -29,6 +29,7 @@ HARD CONSTRAINTS (from the wiki above):
 - Must NOT duplicate any existing experiment and must NOT violate any anti-pattern or closed decision.
 - Must be data-FEASIBLE on the OWNED/FREE data in the DATA CATALOG above (for US equities PREFER survivorship-clean Sharadar SEP/SF1 via sep_panel/us_universe/sf1, NOT yfinance). If it would need a DATA-GATED source, set prior=low and state exactly what's missing in gate0_data_check.
 - Prefer: combinations of validated legs, complementary premia (opposite tails), or less-efficient corners.
+- DIVERSIFY — do NOT propose yet another variant of a premium that already appears 2+ times in the experiments/queue above. If one theme (e.g. PEAD/SUE) is already well-represented, pick a DIFFERENT premium or market entirely.
 Return ONLY a JSON object:
 {{"title": "...", "premium": "...", "market": "...", "data_source": "...", "free_or_owned": "...",
 "signal_approach": "one-paragraph frozen construction", "why_not_duplicate": "...", "prior": "low|medium|high",

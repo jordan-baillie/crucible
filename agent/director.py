@@ -27,6 +27,11 @@ def _norm(t: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (t or "").lower())[:40]
 
 
+def _theme(prop: dict) -> str:
+    """Coarse theme key (premium+market) so the queue doesn't over-cluster on one premium."""
+    return re.sub(r"[^a-z0-9]", "", (str(prop.get("premium", "")) + str(prop.get("market", ""))).lower())[:50]
+
+
 def _tested_titles() -> set[str]:
     return {_norm(p.stem) for p in (WIKI / "experiments").glob("*.md")}
 
@@ -48,17 +53,25 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
             except Exception:
                 pass
         tested, inflight = _tested_titles(), queue.inflight_titles()
+        # seed per-theme counts from what's already in-flight, so we cap clustering (max 2/theme)
+        themes: dict[str, int] = {}
+        for it in queue._read_all():
+            if it["status"] in ("queued", "claimed"):
+                themes[_theme(it["proposal"])] = themes.get(_theme(it["proposal"]), 0) + 1
         added = 0
         need = target - queue.stats().get("queued", 0)
-        for _ in range(min(need, max_new)):
+        for _ in range(min(need, max_new) * 3):  # extra tries to find DIVERSE ideas
+            if added >= min(need, max_new):
+                break
             prop = propose()
             if "error" in prop:
                 continue
-            key = _norm(prop.get("title", ""))
-            if not key or key in tested or key in inflight:
-                continue  # dedup vs recorded experiments + in-flight
+            key, th = _norm(prop.get("title", "")), _theme(prop)
+            if not key or key in tested or key in inflight or themes.get(th, 0) >= 2:
+                continue  # dedup vs recorded experiments + in-flight + theme cluster cap
             queue.enqueue(prop)
             inflight.add(key)
+            themes[th] = themes.get(th, 0) + 1
             added += 1
         return {"added": added, **queue.stats()}
     finally:
