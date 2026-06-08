@@ -18,6 +18,7 @@ def propose() -> dict:
         "\n\n=== PATTERNS & ANTI-PATTERNS (obey these) ===\n" + _read("patterns/META-LESSONS.md") +
         "\n\n=== CLOSED DECISIONS (never re-open) ===\n" + _read("decisions/CLOSED.md") +
         "\n\n=== EXISTING EXPERIMENTS (do not duplicate) ===\n" + _read("index.md") +
+        "\n\n=== DATA WE OWN / CAN USE (build ONLY on these; anything else is DATA-GATED -> Gate-0 FAIL) ===\n" + _read("DATA_CATALOG.md") +
         "\n\n=== WEB-SCOUTED CANDIDATES (fresh external ideas — prefer a strong one of these) ===\n" + _read("candidates.md")
     )
     prompt = f"""{context}
@@ -26,7 +27,7 @@ You are a quant research agent. Propose EXACTLY ONE new, untested strategy hypot
 HARD CONSTRAINTS (from the wiki above):
 - Must be a RISK PREMIUM or a COMBINATION of complementary premia — NOT a standalone prediction edge in a liquid market.
 - Must NOT duplicate any existing experiment and must NOT violate any anti-pattern or closed decision.
-- Must be data-FEASIBLE with free or already-owned data.
+- Must be data-FEASIBLE on the OWNED/FREE data in the DATA CATALOG above (for US equities PREFER survivorship-clean Sharadar SEP/SF1 via sep_panel/us_universe/sf1, NOT yfinance). If it would need a DATA-GATED source, set prior=low and state exactly what's missing in gate0_data_check.
 - Prefer: combinations of validated legs, complementary premia (opposite tails), or less-efficient corners.
 Return ONLY a JSON object:
 {{"title": "...", "premium": "...", "market": "...", "data_source": "...", "free_or_owned": "...",

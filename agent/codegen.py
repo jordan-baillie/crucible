@@ -24,16 +24,23 @@ CONTRACT:
 - grid: a few pre-declared param variants for the DSR effective-N (honest search burden); "default"={} is primary.
 - Apply realistic costs (~8bps on turnover). Inverse-vol size. Weekly rebalance. NO look-ahead (lag signals 1 day).
 
-USE ONLY these tested imports (do NOT download raw / reinvent):
+USE ONLY these tested imports (do NOT download raw / reinvent). Full data inventory: research-wiki/DATA_CATALOG.md.
   from sdk.harness import StrategySpec
-  from sdk.adapters import yf_panel, fred_series, trend_returns, carry_returns, inv_vol_position
+  from sdk.adapters import sep_panel, us_universe, sf1, yf_panel, fred_series, trend_returns, carry_returns, inv_vol_position
   import numpy as np, pandas as pd
-- yf_panel(tickers, start) -> Close panel (FREE).  fred_series({fred_id:col}, start) -> daily rates/yields (FREE).
+- sep_panel(tickers, start, field='closeadj') -> SURVIVORSHIP-CLEAN US equity daily panel from OWNED Sharadar SEP
+  (delisted incl, split+div adjusted). **PREFER over yf_panel for US stocks** (yfinance has survivorship bias).
+- us_universe(sector=, category='Domestic Common Stock', marketcap=, include_delisted=True) -> US ticker list
+  from OWNED Sharadar TICKERS (delisted INCLUDED by default -> survivorship-clean). Pass its output to sep_panel.
+- sf1(tickers, fields, dimension='ARQ') -> OWNED Sharadar fundamentals. Use 'datekey' (filing date) as the as-of
+  date to avoid look-ahead (NEVER calendardate). Fields e.g. eps, revenue, bvps, marketcap, pe, de, roe.
+- yf_panel(tickers, start) -> Close panel (FREE; futures/ETFs/intl indices — NOT US single stocks).
+  fred_series({fred_id:col}, start) -> daily rates/yields/credit-spreads (FREE; e.g. BAMLH0A0HYM2=HY OAS).
 - trend_returns(**p) -> (returns, trades) the validated 21-market CTA trend hedge leg.
 - carry_returns() -> the crypto funding-carry near-miss leg (daily returns Series).
 - inv_vol_position(signal_df, rets, target_vol, vol_lb, max_pos, rebalance) -> weekly-held lagged positions.
 - For a COMBINATION: build each leg's daily returns, align (pd.concat axis=1 dropna), vol-match each, blend.
-Be economical and correct. Free data only. The harness runs ALL the rails; you only produce returns+trades.
+Be economical and correct. OWNED/FREE data only (see DATA_CATALOG.md). The harness runs ALL the rails; you only produce returns+trades.
 '''
 
 
