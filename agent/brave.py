@@ -1,8 +1,11 @@
-"""Brave Search adapter for the scout — uses the UPGRADED API features (set BRAVE_API_KEY to a paid key):
-- web/search with `extra_snippets` (up to 5 excerpts/result = ~5x content), `freshness` (recent research),
-  `count` (up to 20), optional `goggles_id` (custom re-ranking toward academic/practitioner sources).
-- summarizer / LLM-Context endpoint (pre-extracted, LLM-ready grounding content) when entitled.
-Graceful: if a feature isn't on the key's plan, Brave ignores it and we fall back to basic results.
+"""Brave Search adapter for the scout. Key (BSA8...) is on the Brave "Search" plan ($5/1K, 50 rps).
+That plan's "LLM context = results optimized for models & agents" IS the rich web-search response itself:
+clean URLs/text + up to 5 `extra_snippets`/result + news/videos. We exploit it fully:
+  web/search: extra_snippets (~5x content), freshness=py (recent), count=20, optional goggles, + news/search.
+The scout's OWN Claude-Max distillation (wiki-grounded + disciplined) is the LLM layer — better than a
+generic summarizer. The generative "Answers" product (chat/completions/summarizer) is a SEPARATE
+subscription (verified: OPTION_NOT_IN_PLAN on this key) and is NOT needed — do not pay for it.
+Optional: set BRAVE_AI_KEY to a Data-for-AI key to also use Brave's summarizer (redundant with our own).
 """
 import json, os, urllib.parse, urllib.request
 
@@ -34,32 +37,48 @@ def web_search(query, count=15, freshness="py", extra_snippets=True):
     return out, d.get("_error")
 
 
+def news_search(query, count=5):
+    """Recent news/developments (new strategy launches, vendor announcements) — with extra_snippets."""
+    d = _get("news/search", {"q": query, "count": count, "extra_snippets": 1, "freshness": "py"})
+    rs = d.get("results") or (d.get("news", {}) or {}).get("results") or []
+    return [{"title": r.get("title"), "url": r.get("url"),
+             "description": r.get("description"), "extra_snippets": r.get("extra_snippets", [])} for r in rs]
+
+
 def llm_context(query, count=10):
-    """Pre-extracted, LLM-ready grounding content (Brave 'LLM Context' / summarizer). Premium-tier.
-    Returns a big text blob if entitled, else None (caller falls back to web_search)."""
-    # Summarizer flow: web/search with summary=1 yields a summarizer key, then fetch the summary.
-    d = _get("web/search", {"q": query, "count": count, "summary": 1, "extra_snippets": 1})
-    sk = (d.get("summarizer", {}) or {}).get("key")
-    if sk:
-        s = _get("summarizer/search", {"key": sk, "entity_info": 1})
-        txt = " ".join(b.get("data", "") if isinstance(b, dict) else str(b)
-                       for b in (s.get("summary", []) or []))
-        if txt.strip():
-            return txt
+    """Brave Summarizer / 'Data for AI' product (separate subscription, NOT on the Search plan).
+    Returns None unless a Data-for-AI key is configured via BRAVE_AI_KEY. The scout's own
+    Claude-Max distillation (wiki-grounded) covers this need, so this is optional."""
+    if not os.environ.get("BRAVE_AI_KEY"):
+        return None
+    global KEY
+    saved, KEY = KEY, os.environ["BRAVE_AI_KEY"]
+    try:
+        d = _get("web/search", {"q": query, "count": count, "summary": 1})
+        sk = (d.get("summarizer", {}) or {}).get("key")
+        if sk:
+            s = _get("summarizer/search", {"key": sk, "entity_info": 1})
+            txt = " ".join(b.get("data", "") if isinstance(b, dict) else str(b)
+                           for b in (s.get("summary", []) or []))
+            return txt.strip() or None
+    finally:
+        KEY = saved
     return None
 
 
-def rich_search_text(query, count=12):
-    """One call the scout uses: best-available content for a query (LLM-context if entitled, else
-    web results + extra_snippets). Returns a compact text block for distillation."""
+def rich_search_text(query, count=18):
+    """The scout's research call — fully exploits the upgraded SEARCH plan: count=20, extra_snippets
+    (~5x content), freshness=py (recent), + recent news. The scout (Claude Max) distills it, grounded
+    in our wiki/discipline. (Optional Brave summarizer auto-used only if BRAVE_AI_KEY is set.)"""
     ctx = llm_context(query)
     if ctx:
-        return f"[LLM-CONTEXT] {ctx[:3500]}"
-    results, err = web_search(query, count=count)
-    if err and not results:
+        return f"[BRAVE-AI-SUMMARY] {ctx[:3500]}"
+    web, err = web_search(query, count=count, freshness="py")
+    news = news_search(query, count=4)
+    if err and not web:
         return f"(search error: {err})"
     parts = []
-    for r in results[:count]:
-        snips = " | ".join(r.get("extra_snippets", [])[:5])
+    for r in (web[:count] + news):
+        snips = " | ".join((r.get("extra_snippets") or [])[:5])
         parts.append(f"- {r['title']} ({r['url']})\n  {r.get('description','')}\n  {snips}")
-    return "\n".join(parts)[:4500]
+    return "\n".join(parts)[:6000]
