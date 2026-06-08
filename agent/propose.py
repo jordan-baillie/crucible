@@ -17,7 +17,8 @@ def propose() -> dict:
         "=== OVERVIEW ===\n" + _read("overview.md") +
         "\n\n=== PATTERNS & ANTI-PATTERNS (obey these) ===\n" + _read("patterns/META-LESSONS.md") +
         "\n\n=== CLOSED DECISIONS (never re-open) ===\n" + _read("decisions/CLOSED.md") +
-        "\n\n=== EXISTING EXPERIMENTS (do not duplicate) ===\n" + _read("index.md")
+        "\n\n=== EXISTING EXPERIMENTS (do not duplicate) ===\n" + _read("index.md") +
+        "\n\n=== WEB-SCOUTED CANDIDATES (fresh external ideas — prefer a strong one of these) ===\n" + _read("candidates.md")
     )
     prompt = f"""{context}
 

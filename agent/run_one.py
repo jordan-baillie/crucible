@@ -5,8 +5,10 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path("/root/hephaestus")
+WIKI = Path("/root/research-wiki")
 sys.path.insert(0, str(ROOT))
 from agent.propose import propose
+from agent.scout import scout
 from agent import codegen
 
 MAX_RETRIES = 3
@@ -36,6 +38,11 @@ def _run_module(mod_path: str) -> tuple:
 def cycle():
     if (ROOT / "LOOP_DISABLED").exists():
         print("[loop] LOOP_DISABLED present — halting."); return None
+    import random
+    if random.random() < 0.34 or not (WIKI/"candidates.md").exists():
+        print("[loop] 0. scouting the web for fresh ideas...")
+        try: scout()
+        except Exception as e: print("[loop] scout skipped:", e)
     print("[loop] 1. proposing (reading wiki)...")
     prop = propose()
     if "error" in prop:
