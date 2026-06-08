@@ -59,12 +59,15 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     grid = {}
     for label, kw in (spec.grid or {"default": {}}).items():
         r = pd.Series(spec.signal(panel, **{**spec.default_params, **kw})[0]).dropna()
-        grid[label] = r[r.index < spec.holdout_start].values
+        grid[label] = r[r.index < spec.holdout_start]   # keep the Series (index) so PBO/DSR align variants by DATE
 
     # --- the gates (non-bypassable) ---
-    bundle = ri.assemble_bundle(search.values, trades, grid_returns=grid)
+    result = ri.assemble_bundle(search.values, trades, grid_returns=grid)
+    # assemble_bundle returns {"bundle": <gate inputs>, "diagnostics": ...}. evaluate_tiers AND the
+    # verdict need the INNER bundle — passing the wrapper made EVERY gate 'missing' -> tier ALWAYS FAIL
+    # (every forge run failed on this, not on merit). This is THE gate-wiring fix.
+    b = (result.get("bundle") or {}) if isinstance(result, dict) else {}
     dep = ri.deployment_sanity(trades, strategy_meta={"max_positions": spec.deploy_max_positions})
-    b = bundle if isinstance(bundle, dict) else {}
 
     s_sh, h_sh = _sharpe(search), _sharpe(holdout)
     deg = (h_sh - s_sh) / abs(s_sh) * 100 if abs(s_sh) > 0.1 else None
@@ -84,7 +87,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     with FileLock("fdr-registry", ttl=120):
         n_fam = ri.distinct_families(extra=spec.family)
         bar = ri.promote_dsr(n_fam)
-        tiers = ri.evaluate_tiers(bundle, promote_dsr=bar)
+        tiers = ri.evaluate_tiers(b, promote_dsr=bar)
         tier = str(tiers.get("tier"))
         passed_all = tier.upper() == "PROMOTE" and h_pass and dep["passed"]
         try:
