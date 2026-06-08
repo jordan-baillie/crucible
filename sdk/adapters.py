@@ -110,10 +110,13 @@ def sep_panel(tickers=None, start="2000-01-01", end=None, field="closeadj") -> p
     return panel.reindex(bidx).ffill(limit=3)
 
 
-def us_universe(sector=None, category="Domestic Common Stock", marketcap=None, include_delisted=True) -> list:
-    """US-equity universe from OWNED Sharadar TICKERS (cheap, no price load). Includes DELISTED names
-    by default (survivorship-clean). Filter by `sector` (e.g. 'Financial Services'), `category`
-    (default common stock), `marketcap` scale substring (e.g. 'Large','Mid','Small'). Returns ticker list."""
+def us_universe(sector=None, category="Domestic Common Stock", marketcap=None,
+                include_delisted=True, top_n=None) -> list:
+    """US-equity universe from OWNED Sharadar TICKERS (survivorship-clean — DELISTED incl by default).
+    Filter by `sector` (e.g. 'Financial Services'), `category` (default common stock), `marketcap`
+    scale substring (e.g. 'Large','Mid','Small'). **`top_n` bounds to the N MOST-LIQUID names**
+    (recent median dollar volume) — USE THIS for cross-sectional equity: the full ~16k universe is
+    too slow/memory-heavy for the CPCV rails (a run OOM'd at 14.5GB). Returns ticker list."""
     import glob
     p = glob.glob(os.path.join(SHARADAR_DIR, "SHARADAR_TICKERS_*.csv"))[0]
     tk = pd.read_csv(p, usecols=["ticker", "category", "sector", "isdelisted", "scalemarketcap"])
@@ -126,7 +129,18 @@ def us_universe(sector=None, category="Domestic Common Stock", marketcap=None, i
         tk = tk[tk["scalemarketcap"].fillna("").str.contains(marketcap, case=False, regex=False)]
     if not include_delisted:
         tk = tk[tk["isdelisted"] == "N"]
-    return sorted(tk["ticker"].dropna().unique().tolist())
+    names = sorted(tk["ticker"].dropna().unique().tolist())
+    if top_n and len(names) > top_n:
+        # drop the untradable nano/micro tail cheaply first so the price load stays sane,
+        # then keep the top_n by recent median dollar volume (close*volume).
+        if len(names) > 3000 and not marketcap:
+            tk = tk[~tk["scalemarketcap"].fillna("").str.contains("Nano|Micro", case=False, regex=True)]
+            names = sorted(tk["ticker"].dropna().unique().tolist())
+        px = sep_panel(names, start="2015-01-01", field="closeadj")
+        vol = sep_panel(names, start="2015-01-01", field="volume")
+        dollar = (px * vol).tail(252).median().dropna()
+        names = sorted(dollar.nlargest(min(top_n, len(dollar))).index.tolist())
+    return names
 
 
 def _sf1_cache() -> str:

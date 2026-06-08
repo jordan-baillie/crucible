@@ -31,8 +31,11 @@ USE ONLY these tested imports (do NOT download raw / reinvent). Full data invent
   import numpy as np, pandas as pd
 - sep_panel(tickers, start, field='closeadj') -> SURVIVORSHIP-CLEAN US equity daily panel from OWNED Sharadar SEP
   (delisted incl, split+div adjusted). **PREFER over yf_panel for US stocks** (yfinance has survivorship bias).
-- us_universe(sector=, category='Domestic Common Stock', marketcap=, include_delisted=True) -> US ticker list
-  from OWNED Sharadar TICKERS (delisted INCLUDED by default -> survivorship-clean). Pass its output to sep_panel.
+- us_universe(sector=, category='Domestic Common Stock', marketcap=, include_delisted=True, top_n=) -> US ticker
+  list from OWNED Sharadar TICKERS (delisted INCLUDED -> survivorship-clean). Pass its output to sep_panel.
+  **CRITICAL for cross-sectional EQUITY: you MUST bound the universe — pass top_n (e.g. us_universe(..., top_n=1000)
+  = 1000 most-liquid names) and/or marketcap='Large'/'Mid'. NEVER run the full ~16k common-stock universe through
+  the rails — the CPCV is pathologically slow + OOM'd at 14.5GB. Target ~few-hundred to ~1500 liquid names.**
 - sf1(tickers, fields, dimension='ARQ') -> OWNED Sharadar fundamentals. Use 'datekey' (filing date) as the as-of
   date to avoid look-ahead (NEVER calendardate). Fields e.g. eps, revenue, bvps, marketcap, pe, de, roe.
 - yf_panel(tickers, start) -> Close panel (FREE; futures/ETFs/intl indices — NOT US single stocks).
