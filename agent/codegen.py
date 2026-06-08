@@ -1,0 +1,59 @@
+"""Signal codegen: the agent writes a complete StrategySpec module from its proposal,
+with a bounded fix-retry loop (reads the traceback, repairs the code). Claude Max OAuth ($0)."""
+import json, re, subprocess
+from agent.propose import _assistant_text
+
+SYS = "You are Claude Code, Anthropic's official CLI for Claude."
+
+CONTRACT = '''
+You are writing a Python strategy module for the Hephaestus research harness. Output ONLY one
+```python code block: a complete module with NO external side effects (no file writes, no capital,
+no config). It MUST define exactly:
+
+  def load_data() -> pd.DataFrame:        # the panel signal() consumes (use the adapters below)
+  def signal(panel, **params) -> (pd.Series daily_returns, list trades):
+  SPEC = StrategySpec(id=..., family=..., title=..., markets=[...], data_desc=..., pre_registration=...,
+                      load_data=load_data, signal=signal, default_params={...}, grid={label:params,...},
+                      holdout_start="2022-01-01", deploy_max_positions=N)
+
+CONTRACT:
+- daily_returns: a pandas Series of daily net-of-cost portfolio returns, DatetimeIndex, name set.
+- trades: list of dicts, each {"ticker","sector","entry_date"(YYYY-MM-DD str),"exit_date","hold_days"(int),
+  "position_value"(float),"pnl"(float)} — used for deployment-sanity (needs >=50 trades, spread across
+  sectors, no single name >40% of position-days). For a factor book, emit one trade per held position run.
+- grid: a few pre-declared param variants for the DSR effective-N (honest search burden); "default"={} is primary.
+- Apply realistic costs (~8bps on turnover). Inverse-vol size. Weekly rebalance. NO look-ahead (lag signals 1 day).
+
+USE ONLY these tested imports (do NOT download raw / reinvent):
+  from sdk.harness import StrategySpec
+  from sdk.adapters import yf_panel, fred_series, trend_returns, carry_returns, inv_vol_position
+  import numpy as np, pandas as pd
+- yf_panel(tickers, start) -> Close panel (FREE).  fred_series({fred_id:col}, start) -> daily rates/yields (FREE).
+- trend_returns(**p) -> (returns, trades) the validated 21-market CTA trend hedge leg.
+- carry_returns() -> the crypto funding-carry near-miss leg (daily returns Series).
+- inv_vol_position(signal_df, rets, target_vol, vol_lb, max_pos, rebalance) -> weekly-held lagged positions.
+- For a COMBINATION: build each leg's daily returns, align (pd.concat axis=1 dropna), vol-match each, blend.
+Be economical and correct. Free data only. The harness runs ALL the rails; you only produce returns+trades.
+'''
+
+
+def _pi(prompt: str) -> str:
+    r = subprocess.run(["pi", "-p", "--model", "claude-sonnet-4-6", "--system-prompt", SYS, "--mode", "json"],
+                       input=prompt, capture_output=True, text=True, timeout=900)
+    return _assistant_text(r.stdout)
+
+
+def _extract_code(text: str) -> str:
+    m = re.search(r"```python\s*(.*?)```", text, re.DOTALL) or re.search(r"```\s*(.*?)```", text, re.DOTALL)
+    return (m.group(1) if m else text).strip()
+
+
+def generate(proposal: dict) -> str:
+    prompt = f"{CONTRACT}\n\n=== PROPOSAL TO IMPLEMENT ===\n{json.dumps(proposal, indent=2)}\n\nWrite the module now."
+    return _extract_code(_pi(prompt))
+
+
+def fix(code: str, traceback: str) -> str:
+    prompt = (f"{CONTRACT}\n\nThe following module FAILED. Fix it; output ONLY the corrected ```python module.\n\n"
+              f"=== CODE ===\n{code}\n\n=== ERROR ===\n{traceback[-2500:]}")
+    return _extract_code(_pi(prompt))
