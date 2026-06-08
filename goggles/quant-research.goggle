@@ -1,0 +1,34 @@
+! name: Hephaestus Quant Research
+! description: Boost rigorous academic/practitioner quant sources; downrank marketing/hype/bot-vendor pages
+! public: true
+! author: Hephaestus Research Agent
+
+! --- BOOST: academic / working papers / data ---
+||ssrn.com^$boost=10
+||arxiv.org^$boost=9
+||nber.org^$boost=8
+||federalreserve.gov^$boost=7
+||newyorkfed.org^$boost=7
+||stlouisfed.org^$boost=6
+||bis.org^$boost=6
+||sciencedirect.com^$boost=6
+||tandfonline.com^$boost=5
+||springer.com^$boost=5
+||jstor.org^$boost=5
+||researchgate.net^$boost=4
+! --- BOOST: rigorous practitioner research + code ---
+||quantpedia.com^$boost=8
+||aqr.com^$boost=7
+||alphaarchitect.com^$boost=5
+||hudsonthames.org^$boost=5
+||robeco.com^$boost=4
+||cfainstitute.org^$boost=4
+||github.com^$boost=4
+||quantocracy.com^$boost=3
+! --- DOWNRANK: bot-vendor marketing / APY hype ---
+||3commas.io^$downrank=8
+||cryptohopper.com^$downrank=8
+||pionex.com^$downrank=8
+||bitsgap.com^$downrank=6
+||coinrule.com^$downrank=6
+||arbitragescanner.io^$downrank=6
