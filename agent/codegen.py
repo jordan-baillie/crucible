@@ -2,6 +2,7 @@
 with a bounded fix-retry loop (reads the traceback, repairs the code). Claude Max OAuth ($0)."""
 import json, re, subprocess
 from agent.propose import _assistant_text
+from agent.config import MODEL
 
 SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 
@@ -49,7 +50,7 @@ Be economical and correct. OWNED/FREE data only (see DATA_CATALOG.md). The harne
 
 
 def _pi(prompt: str) -> str:
-    r = subprocess.run(["pi", "-p", "--model", "claude-sonnet-4-6", "--system-prompt", SYS, "--mode", "json"],
+    r = subprocess.run(["pi", "-p", "--model", MODEL, "--system-prompt", SYS, "--mode", "json"],
                        input=prompt, capture_output=True, text=True, timeout=900)
     return _assistant_text(r.stdout)
 

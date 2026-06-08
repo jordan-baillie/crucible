@@ -6,6 +6,7 @@ import json, subprocess
 from datetime import date
 from pathlib import Path
 from agent.propose import _assistant_text
+from agent.config import MODEL
 
 WIKI = Path("/root/research-wiki")
 BRAVE = "/root/.pi/agent/skills/pi-skills/brave-search/search.js"
@@ -18,7 +19,7 @@ def _read(p):
 
 
 def _pi(prompt):
-    r = subprocess.run(["pi", "-p", "--model", "claude-sonnet-4-6", "--system-prompt", SYS, "--mode", "json"],
+    r = subprocess.run(["pi", "-p", "--model", MODEL, "--system-prompt", SYS, "--mode", "json"],
                        input=prompt, capture_output=True, text=True, timeout=480)
     return _assistant_text(r.stdout)
 

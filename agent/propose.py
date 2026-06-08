@@ -2,6 +2,7 @@
 Grounded in accumulated knowledge so it never re-tests closed sets or duplicates experiments."""
 import json, subprocess
 from pathlib import Path
+from agent.config import MODEL
 
 WIKI = Path("/root/research-wiki")
 SYS = "You are Claude Code, Anthropic's official CLI for Claude."
@@ -34,7 +35,7 @@ Return ONLY a JSON object:
 {{"title": "...", "premium": "...", "market": "...", "data_source": "...", "free_or_owned": "...",
 "signal_approach": "one-paragraph frozen construction", "why_not_duplicate": "...", "prior": "low|medium|high",
 "pairs_with": "...", "gate0_data_check": "what to verify before building"}}"""
-    r = subprocess.run(["pi", "-p", "--model", "claude-sonnet-4-6", "--system-prompt", SYS, "--mode", "json"],
+    r = subprocess.run(["pi", "-p", "--model", MODEL, "--system-prompt", SYS, "--mode", "json"],
                        input=prompt, capture_output=True, text=True, timeout=300)
     text = _assistant_text(r.stdout)
     try:
