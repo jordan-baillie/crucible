@@ -19,8 +19,7 @@ def _read(p):
 
 
 def _pi(prompt):
-    r = subprocess.run(["pi", "-p", "--model", MODEL, "--system-prompt", SYS, "--mode", "json"],
-                       input=prompt, capture_output=True, text=True, timeout=480)
+    r = subprocess.run(pi_cmd(), input=prompt, capture_output=True, text=True, timeout=480)
     return _assistant_text(r.stdout)
 
 

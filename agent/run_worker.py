@@ -70,27 +70,31 @@ def run_one_from_queue():
             return None
     prop, sid = item["proposal"], _slug(item["proposal"])
     print(f"[{AGENT_ID}] claimed {item['id']}: {str(prop.get('title'))[:48]} -> {sid}")
-    code = codegen.generate(prop)
     verdict, log = None, ""
-    for attempt in range(1, MAX_RETRIES + 1):
-        bad = scan_code(code)
-        if bad:
-            print(f"[{AGENT_ID}] sandbox REJECT ({bad}); requesting fix...")
-            code = codegen.fix(code, f"SANDBOX VIOLATION: {bad}. Remove it entirely; the harness "
-                                     f"owns ALL I/O and data is fetched via sdk.adapters only.")
-            continue
-        mod = ROOT / "strategies" / f"{sid.replace('-', '_')}.py"
-        mod.write_text(code)
-        print(f"[{AGENT_ID}] run attempt {attempt}...")
-        try:
-            verdict, log = _run_module(mod.stem)
-        except subprocess.TimeoutExpired:
-            log = "TIMEOUT (>1800s)"
-        if verdict is not None:
-            break
-        tb = "\n".join(l for l in log.splitlines() if any(k in l for k in
-              ("Error", "Traceback", "Exception", "line ", "raise", "assert")))[-2500:] or log[-2500:]
-        code = codegen.fix(code, tb)
+    try:
+        code = codegen.generate(prop)
+        for attempt in range(1, MAX_RETRIES + 1):
+            bad = scan_code(code)
+            if bad:
+                print(f"[{AGENT_ID}] sandbox REJECT ({bad}); requesting fix...")
+                code = codegen.fix(code, f"SANDBOX VIOLATION: {bad}. Remove it entirely; the harness "
+                                         f"owns ALL I/O and data is fetched via sdk.adapters only.")
+                continue
+            mod = ROOT / "strategies" / f"{sid.replace('-', '_')}.py"
+            mod.write_text(code)
+            print(f"[{AGENT_ID}] run attempt {attempt}...")
+            try:
+                verdict, log = _run_module(mod.stem)
+            except subprocess.TimeoutExpired:
+                log = "TIMEOUT (>1800s)"
+            if verdict is not None:
+                break
+            tb = "\n".join(l for l in log.splitlines() if any(k in l for k in
+                  ("Error", "Traceback", "Exception", "line ", "raise", "assert")))[-2500:] or log[-2500:]
+            code = codegen.fix(code, tb)
+    except Exception as e:  # never let one bad cycle crash the worker / strand the queue item
+        log = f"WORKER EXCEPTION: {type(e).__name__}: {str(e)[:300]}"
+        print(f"[{AGENT_ID}] {log}")
     outcome = {"ts": datetime.now().isoformat(), "agent": AGENT_ID, "queue_id": item["id"],
                "id": sid, "title": prop.get("title"), "proposal": prop,
                "ran": verdict is not None, "verdict": verdict,
