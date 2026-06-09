@@ -18,6 +18,7 @@ os.environ.setdefault("RESEARCH_INTEGRITY_DIR", "/root/research-wiki/.registry")
 import research_integrity as ri
 
 WIKI = Path("/root/research-wiki")
+SCREEN_FLOOR = 0.3   # tier-0: |search Sharpe| below this -> no in-sample edge -> skip grid+CPCV, keep holdout
 
 
 @dataclass
@@ -58,8 +59,37 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     full_ret, trades = spec.signal(panel, **spec.default_params)
     full_ret = pd.Series(full_ret).dropna()
     search = full_ret[full_ret.index < spec.holdout_start]
-    holdout = full_ret[full_ret.index >= spec.holdout_start]
+    s_sh = _sharpe(search)
 
+    # TIER-0 SCREEN (efficiency + holdout discipline): no in-sample edge -> SCREEN_FAIL. Skip the expensive
+    # grid + CPCV AND do NOT burn the write-once holdout -- only an earned in-sample edge gets the OOS look.
+    if abs(s_sh) < SCREEN_FLOOR:
+        with FileLock("fdr-registry", ttl=120):
+            n_fam = ri.distinct_families(extra=spec.family)
+            bar = ri.promote_dsr(n_fam)
+            try:
+                ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": "SCREEN_FAIL",
+                    "dsr": None, "promote_dsr": bar, "n_families": n_fam, "holdout_touched": False, "passed_all": False})
+            except Exception:
+                pass
+        verdict = {
+            "id": spec.id, "family": spec.family, "title": spec.title, "markets": spec.markets,
+            "tier": "SCREEN_FAIL", "promote_bar": round(bar, 3), "n_families": n_fam,
+            "dsr": None, "median_cpcv": None, "pbo": None, "deployment_passed": None,
+            "deploy_peak": None, "deploy_sectors": None, "deploy_reasons": None,
+            "search_sharpe": round(s_sh, 3), "holdout_sharpe": None, "holdout_pass": False,
+            "holdout_reasons": [f"tier-0 screen: |search Sharpe| {abs(s_sh):.2f} < {SCREEN_FLOOR} -- no in-sample edge; full rails + holdout skipped"],
+            "full_sharpe": round(_sharpe(full_ret), 3), "full_maxdd": round(_maxdd(full_ret), 3), "n_trades": len(trades),
+            "stage1_pass": False, "confirmed": False, "scope": getattr(spec, "scope", "broad"),
+            "needs_confirmation": None, "PASSED_ALL_GATES": False,
+        }
+        if write_wiki:
+            from sdk.wiki import write_experiment
+            write_experiment(spec, verdict)
+        return verdict
+
+    # earned the full rails + the OOS look
+    holdout = full_ret[full_ret.index >= spec.holdout_start]
     grid = {}
     for label, kw in (spec.grid or {"default": {}}).items():
         r = pd.Series(spec.signal(panel, **{**spec.default_params, **kw})[0]).dropna()
@@ -73,7 +103,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     b = (result.get("bundle") or {}) if isinstance(result, dict) else {}
     dep = ri.deployment_sanity(trades, strategy_meta={"max_positions": spec.deploy_max_positions})
 
-    s_sh, h_sh = _sharpe(search), _sharpe(holdout)
+    h_sh = _sharpe(holdout)  # s_sh computed above (survived the tier-0 screen)
     deg = (h_sh - s_sh) / abs(s_sh) * 100 if abs(s_sh) > 0.1 else None
     h_pass, h_reasons = ri.holdout_gate(h_sh, deg, dep["passed"])
     # SEARCH-SANITY: a holdout "pass" is meaningless if there was no in-sample edge to confirm.

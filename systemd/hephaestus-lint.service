@@ -1,0 +1,10 @@
+[Unit]
+Description=Hephaestus wiki lint (memory hygiene — cap log, prune candidates, flag orphans)
+[Service]
+Type=oneshot
+WorkingDirectory=/root/hephaestus
+ExecStart=/bin/bash -lc 'python3 -m agent.lint'
+StandardOutput=append:/tmp/heph_lint.log
+StandardError=append:/tmp/heph_lint.log
+[Install]
+WantedBy=multi-user.target
