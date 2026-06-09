@@ -29,8 +29,10 @@ def _norm(t: str) -> str:
 
 
 def _theme(prop: dict) -> str:
-    """Coarse theme key (premium+market) so the queue doesn't over-cluster on one premium."""
-    return re.sub(r"[^a-z0-9]", "", (str(prop.get("premium", "")) + str(prop.get("market", ""))).lower())[:50]
+    """Coarse FAMILY key (robust to LLM rewording) so the 2/theme queue cap catches sibling mutations
+    (e.g. reworded value×mom variants) instead of treating each as a novel premium."""
+    from agent.families import family_bucket
+    return family_bucket(str(prop.get("title", "")) or str(prop.get("premium", "")))
 
 
 def _tested_titles() -> set[str]:

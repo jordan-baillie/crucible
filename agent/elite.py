@@ -35,11 +35,16 @@ def record(outcome: dict) -> None:
 
 
 def sample(rng) -> dict | None:
-    """Fitness-weighted pick of an elite to evolve."""
+    """Fitness-weighted pick of an elite to evolve, DOWN-WEIGHTED by family representation so the exploit
+    branch can't over-concentrate on the highest-fitness family (the value×mom-hammering failure mode)."""
     items = _load()
     if not items:
         return None
-    w = [max(i["fitness"], 0.01) for i in items]
+    from collections import Counter
+    from agent.families import family_bucket
+    fams = [family_bucket((i.get("title") or "") or (i.get("proposal") or {}).get("premium", "")) for i in items]
+    fc = Counter(fams)
+    w = [max(i["fitness"], 0.01) / fc[f] for i, f in zip(items, fams)]  # diversity-adjusted: /count of its family
     r = rng.random() * sum(w)
     c = 0.0
     for it, wi in zip(items, w):

@@ -69,13 +69,25 @@ def _pi(prompt: str) -> str:
 
 
 def _extract_code(text: str) -> str:
-    m = re.search(r"```python\s*(.*?)```", text, re.DOTALL) or re.search(r"```\s*(.*?)```", text, re.DOTALL)
-    return (m.group(1) if m else text).strip()
+    # take the LARGEST fenced block (Opus sometimes emits a skeleton block first, then the real one)
+    blocks = re.findall(r"```python\s*(.*?)```", text, re.DOTALL) or re.findall(r"```\s*(.*?)```", text, re.DOTALL)
+    return (max(blocks, key=len) if blocks else (text or "")).strip()
+
+
+def _looks_complete(code: str) -> bool:
+    return "def signal" in code and len(code) > 300
 
 
 def generate(proposal: dict) -> str:
-    prompt = f"{CONTRACT}\n\n=== PROPOSAL TO IMPLEMENT ===\n{json.dumps(proposal, indent=2)}\n\nWrite the module now."
-    return _extract_code(_pi(prompt))
+    prompt = (f"{CONTRACT}\n\n=== PROPOSAL TO IMPLEMENT ===\n{json.dumps(proposal, indent=2)}\n\n"
+              f"Write the COMPLETE module now as ONE ```python code block with the full implementation "
+              f"(imports + def signal + any helpers). Do NOT emit a skeleton, outline, or partial block.")
+    code = ""
+    for _ in range(3):  # retry-on-empty at the SOURCE -> kills the wasted consistency/fix call per run
+        code = _extract_code(_pi(prompt))
+        if _looks_complete(code):
+            return code
+    return code  # last attempt; the run-loop fix() repairs if still incomplete
 
 
 def fix(code: str, traceback: str) -> str:
