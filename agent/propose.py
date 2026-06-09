@@ -34,7 +34,9 @@ HARD CONSTRAINTS (from the wiki above):
 Return ONLY a JSON object:
 {{"title": "...", "premium": "...", "market": "...", "data_source": "...", "free_or_owned": "...",
 "signal_approach": "one-paragraph frozen construction", "why_not_duplicate": "...", "prior": "low|medium|high",
-"pairs_with": "...", "gate0_data_check": "what to verify before building"}}"""
+"pairs_with": "...", "gate0_data_check": "what to verify before building",
+"scope": "broad|local — broad if a UNIVERSAL mechanism (theory says it appears across markets; a pass must later GENERALISE) or local if defensibly universe-specific (then forward-validation confirms it)",
+"generalization_plan": "if broad: the untouched universes to confirm the mechanism in (e.g. other cap-tiers/sectors/asset-classes); if local: the economic reason it lives ONLY in this universe + the forward-validation plan"}}"""
     r = subprocess.run(pi_cmd(), input=prompt, capture_output=True, text=True, timeout=300)
     text = _assistant_text(r.stdout)
     try:

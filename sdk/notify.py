@@ -28,6 +28,29 @@ def telegram_pass(spec, verdict: dict):
         print(f"[notify] telegram send failed: {e}"); return False
 
 
+def telegram_candidate(spec, verdict: dict):
+    """Fires when a strategy clears the STAGE-1 single-universe gates — a CANDIDATE, not a confirmed
+    edge. Confirmation (generalization or forward-validation) is required before any capital."""
+    tok, chat = _creds()
+    if not tok or not chat:
+        print("[notify] telegram creds missing; skipping candidate alert"); return False
+    needs = verdict.get("needs_confirmation", "fluke-confirmation")
+    msg = (f"🟡 STAGE-1 CANDIDATE (NOT confirmed)\n\n"
+           f"<b>{spec.title}</b>\n"
+           f"id: {spec.id} | scope: {verdict.get('scope','?')} | markets: {', '.join(spec.markets)}\n\n"
+           f"Cleared all single-universe gates: tier {verdict['tier']} (bar {verdict['promote_bar']}), "
+           f"DSR {verdict['dsr']} | CPCV {verdict['median_cpcv']} | PBO {verdict['pbo']} | holdout {verdict['holdout_sharpe']}\n\n"
+           f"⏳ REQUIRES <b>{needs}</b> before it's a real edge — a single-universe pass can be a "
+           f"non-generalising overfit outlier (cf. BAB). NO capital until confirmed + human review. "
+           f"See wiki/experiments/{spec.id}.md")
+    try:
+        data = urllib.parse.urlencode({"chat_id": chat, "text": msg, "parse_mode": "HTML"}).encode()
+        urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/sendMessage", data=data, timeout=20)
+        print("[notify] 🟡 Telegram CANDIDATE alert sent (stage-1 pass; needs confirmation)"); return True
+    except Exception as e:
+        print(f"[notify] telegram send failed: {e}"); return False
+
+
 def telegram_msg(text: str):
     """Generic message (digest/heartbeat)."""
     tok, chat = _creds()

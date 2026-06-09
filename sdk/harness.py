@@ -35,6 +35,10 @@ class StrategySpec:
     grid: dict = field(default_factory=dict)  # label -> params override (DSR effective-N; honest search burden)
     holdout_start: str = "2022-01-01"         # write-once quarantine
     deploy_max_positions: int = 10
+    # PROMOTION POLICY (2026-06-09): a stage-1 gate pass is only a CANDIDATE. Confirmation needs
+    # either cross-market generalization (broad mechanism) or forward-validation (defensibly local).
+    scope: str = "broad"                       # "broad" (universal mechanism -> MUST generalize) | "local" (defensible universe-specific -> forward-validate)
+    generalization_universes: list = field(default_factory=list)  # broad scope: untouched universes to confirm the mechanism in
     project: str = "hephaestus"
 
 
@@ -89,11 +93,16 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         bar = ri.promote_dsr(n_fam)
         tiers = ri.evaluate_tiers(b, promote_dsr=bar)
         tier = str(tiers.get("tier"))
-        passed_all = tier.upper() == "PROMOTE" and h_pass and dep["passed"]
+        stage1_pass = tier.upper() == "PROMOTE" and h_pass and dep["passed"]
+        # POLICY: a stage-1 pass is a CANDIDATE, never a confirmed edge. PASSED_ALL_GATES requires
+        # INDEPENDENT fluke-confirmation (generalization for broad scope, forward-validation for local)
+        # -- never auto-declared at run time. The BAB episode: it cleared every single-universe gate and
+        # was still a non-generalising overfit outlier.
+        passed_all = False
         try:
             ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": tier,
                                     "dsr": b.get("dsr"), "promote_dsr": bar, "n_families": n_fam,
-                                    "holdout_touched": True, "passed_all": passed_all})
+                                    "holdout_touched": True, "passed_all": stage1_pass})
         except Exception:
             pass
 
@@ -106,13 +115,17 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "search_sharpe": round(s_sh, 3), "holdout_sharpe": round(h_sh, 3),
         "holdout_pass": h_pass, "holdout_reasons": h_reasons,
         "full_sharpe": round(_sharpe(full_ret), 3), "full_maxdd": round(_maxdd(full_ret), 3),
-        "n_trades": len(trades), "PASSED_ALL_GATES": passed_all,
+        "n_trades": len(trades),
+        "stage1_pass": stage1_pass, "confirmed": False, "scope": getattr(spec, "scope", "broad"),
+        "needs_confirmation": (None if not stage1_pass else
+            ("cross-market-generalization" if getattr(spec, "scope", "broad") == "broad" else "forward-validation")),
+        "PASSED_ALL_GATES": passed_all,
     }
 
     if write_wiki:
         from sdk.wiki import write_experiment
         write_experiment(spec, verdict)
-    if alert and passed_all:
-        from sdk.notify import telegram_pass
-        telegram_pass(spec, verdict)
+    if alert and stage1_pass:
+        from sdk.notify import telegram_candidate
+        telegram_candidate(spec, verdict)
     return verdict
