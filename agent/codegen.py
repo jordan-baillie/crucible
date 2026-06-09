@@ -82,3 +82,23 @@ def fix(code: str, traceback: str) -> str:
     prompt = (f"{CONTRACT}\n\nThe following module FAILED. Fix it; output ONLY the corrected ```python module.\n\n"
               f"=== CODE ===\n{code}\n\n=== ERROR ===\n{traceback[-2500:]}")
     return _extract_code(_pi(prompt))
+
+
+def consistency_check(proposal: dict, code: str) -> tuple:
+    """Verify the generated code FAITHFULLY implements the proposal's economic thesis (catches code that
+    claims one mechanism but computes another — e.g. 'split-consistent' but uses raw shares). Fail-OPEN
+    on a parse error (best-effort guard, not a hard gate). Returns (ok: bool, issues: str)."""
+    claim = {k: proposal.get(k) for k in ("premium", "market", "signal_approach", "why_not_duplicate")}
+    prompt = (f"PROPOSAL (the economic thesis the code MUST implement):\n{json.dumps(claim, indent=2)}\n\n"
+              f"GENERATED CODE:\n```python\n{code[:6500]}\n```\n\n"
+              f"Does the code FAITHFULLY implement that thesis + frozen signal construction? Check specifically: "
+              f"the actual computation matches the claimed mechanism/direction; point-in-time data (datekey, no "
+              f"look-ahead); correct adjustments (splits, dividends, costs); the right universe; the signal sign. "
+              f'Return ONLY JSON: {{"consistent": true|false, "issues": "specific claim-vs-code mismatches, or empty"}}')
+    text = _pi(prompt)
+    try:
+        s, e = text.find("{"), text.rfind("}")
+        d = json.loads(text[s:e + 1])
+        return bool(d.get("consistent", True)), str(d.get("issues", ""))[:500]
+    except Exception:
+        return True, ""

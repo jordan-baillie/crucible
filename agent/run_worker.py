@@ -73,6 +73,11 @@ def run_one_from_queue():
     verdict, log = None, ""
     try:
         code = codegen.generate(prop)
+        ok, issues = codegen.consistency_check(prop, code)  # does the code implement the claimed thesis?
+        if not ok and issues:
+            print(f"[{AGENT_ID}] thesis<->code mismatch: {issues[:120]}; requesting fix...")
+            code = codegen.fix(code, f"THESIS MISMATCH — the code must FAITHFULLY implement the proposal's "
+                                     f"economic thesis. Fix these mismatches: {issues}")
         for attempt in range(1, MAX_RETRIES + 1):
             bad = scan_code(code)
             if bad:

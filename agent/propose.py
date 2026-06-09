@@ -31,10 +31,12 @@ HARD CONSTRAINTS (from the wiki above):
 - Must be data-FEASIBLE on the OWNED/FREE data in the DATA CATALOG above (for US equities PREFER survivorship-clean Sharadar SEP/SF1 via sep_panel/us_universe/sf1, NOT yfinance). If it would need a DATA-GATED source, set prior=low and state exactly what's missing in gate0_data_check.
 - Prefer: combinations of validated legs, complementary premia (opposite tails), or less-efficient corners.
 - DIVERSIFY — do NOT propose yet another variant of a premium that already appears 2+ times in the experiments/queue above. If one theme (e.g. PEAD/SUE) is already well-represented, pick a DIFFERENT premium or market entirely.
+- CROWDING/DECAY — PREFER novel inefficiencies in less-arbitraged corners over heavily-published factors. Famous factors (betting-against-beta/low-vol, value, momentum, size) are CROWDED -> decayed + regime-fragile (cf. BAB: passed every single-universe gate but FAILED cross-market and is heavily published). If you propose a known premium, it must be a genuinely under-exploited IMPLEMENTATION or corner.
 Return ONLY a JSON object:
 {{"title": "...", "premium": "...", "market": "...", "data_source": "...", "free_or_owned": "...",
 "signal_approach": "one-paragraph frozen construction", "why_not_duplicate": "...", "prior": "low|medium|high",
 "pairs_with": "...", "gate0_data_check": "what to verify before building",
+"crowding_risk": "low|medium|high — how heavily-published/arbitraged is this edge? (favour low)",
 "scope": "broad|local — broad if a UNIVERSAL mechanism (theory says it appears across markets; a pass must later GENERALISE) or local if defensibly universe-specific (then forward-validation confirms it)",
 "generalization_plan": "if broad: the untouched universes to confirm the mechanism in (e.g. other cap-tiers/sectors/asset-classes); if local: the economic reason it lives ONLY in this universe + the forward-validation plan"}}"""
     r = subprocess.run(pi_cmd(), input=prompt, capture_output=True, text=True, timeout=300)
