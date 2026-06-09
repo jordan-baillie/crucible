@@ -19,6 +19,8 @@ import research_integrity as ri
 
 WIKI = Path("/root/research-wiki")
 SCREEN_FLOOR = 0.3   # tier-0: |search Sharpe| below this -> no in-sample edge -> skip grid+CPCV, keep holdout
+BETA_HI = 0.6        # long-only beta-to-universe above this + weak selection-alpha -> beta-confound
+SEL_FLOOR = 0.4      # selection-alpha Sharpe a high-beta strategy must clear to be a real edge (not just beta)
 
 
 @dataclass
@@ -51,6 +53,40 @@ def _sharpe(r, ann=252):
 def _maxdd(r):
     eq = (1 + pd.Series(r).dropna()).cumprod()
     return float((eq / eq.cummax() - 1).min())
+
+
+def _price_matrix(panel):
+    """Best-effort (dates x assets) price matrix for the long-only benchmark; None if not a price panel."""
+    try:
+        if isinstance(panel, pd.DataFrame) and isinstance(panel.columns, pd.MultiIndex):
+            lvl0 = set(panel.columns.get_level_values(0))
+            for key in ("px", "close", "closeadj", "price", "prices", "adj_close"):
+                if key in lvl0:
+                    return panel[key]
+            return None
+        if isinstance(panel, pd.DataFrame) and panel.shape[1] >= 5:
+            return panel
+    except Exception:
+        return None
+    return None
+
+
+def _beta_decomp(search_ret, price_mx):
+    """Decompose SEARCH returns into universe-beta + selection-alpha (residual after removing the equal-weight
+    universe return). Cheap stage-1 version of MCPT's finding: catches the long-only-beta confound."""
+    if price_mx is None:
+        return None
+    try:
+        ew = price_mx.pct_change().mean(axis=1)
+        df = pd.concat([pd.Series(search_ret), ew], axis=1).dropna()
+        df.columns = ["r", "m"]
+        if len(df) < 60 or df["m"].var() == 0:
+            return None
+        beta = df["r"].cov(df["m"]) / df["m"].var()
+        return {"beta_to_universe": round(float(beta), 2),
+                "selection_alpha_sharpe": _sharpe(df["r"] - beta * df["m"])}
+    except Exception:
+        return None
 
 
 def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
@@ -117,6 +153,14 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     #     The heavy CPCV (assemble_bundle) ran above OUTSIDE the lock; here we serialize only
     #     count -> bar -> evaluate -> append (milliseconds). This is what keeps the shared FDR
     #     bar correct when N agents test in parallel -- the non-negotiable Phase-3 invariant. ---
+    # long-only BETA-CONFOUND check: decompose search returns into universe-beta + selection-alpha.
+    # MCPT's lesson made a cheap stage-1 gate: an apparent edge that is really long-only universe beta
+    # (high beta, weak selection-alpha) must NOT pass -- it'd just be holding the universe (cf. value×mom 0.994).
+    decomp = _beta_decomp(search, _price_matrix(panel)) or {}
+    beta_confound = bool(decomp.get("beta_to_universe", 0) > BETA_HI
+                         and decomp.get("selection_alpha_sharpe") is not None
+                         and decomp["selection_alpha_sharpe"] < SEL_FLOOR)
+
     from sdk.locks import FileLock
     with FileLock("fdr-registry", ttl=120):
         n_fam = ri.distinct_families(extra=spec.family)
@@ -124,6 +168,11 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         tiers = ri.evaluate_tiers(b, promote_dsr=bar)
         tier = str(tiers.get("tier"))
         stage1_pass = tier.upper() == "PROMOTE" and h_pass and dep["passed"]
+        if stage1_pass and beta_confound:   # demote: edge is long-only universe beta, not the signal
+            stage1_pass = False
+            h_reasons = list(h_reasons) + [
+                f"BETA-CONFOUND: beta_to_universe {decomp['beta_to_universe']} + selection-alpha Sharpe "
+                f"{decomp['selection_alpha_sharpe']} < {SEL_FLOOR} -> edge is long-only universe beta, demoted"]
         # POLICY: a stage-1 pass is a CANDIDATE, never a confirmed edge. PASSED_ALL_GATES requires
         # INDEPENDENT fluke-confirmation (generalization for broad scope, forward-validation for local)
         # -- never auto-declared at run time. The BAB episode: it cleared every single-universe gate and
@@ -146,6 +195,8 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "holdout_pass": h_pass, "holdout_reasons": h_reasons,
         "full_sharpe": round(_sharpe(full_ret), 3), "full_maxdd": round(_maxdd(full_ret), 3),
         "n_trades": len(trades),
+        "beta_to_universe": decomp.get("beta_to_universe"),
+        "selection_alpha_sharpe": decomp.get("selection_alpha_sharpe"), "beta_confound": beta_confound,
         "stage1_pass": stage1_pass, "confirmed": False, "scope": getattr(spec, "scope", "broad"),
         "needs_confirmation": (None if not stage1_pass else
             ("cross-market-generalization" if getattr(spec, "scope", "broad") == "broad" else "forward-validation")),

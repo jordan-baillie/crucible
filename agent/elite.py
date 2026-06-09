@@ -12,6 +12,8 @@ MIN_FIT = 0.5   # only genuinely promising runs enter (DSR > 0.5)
 def _fitness(v: dict) -> float:
     if not v:
         return 0.0
+    if v.get("beta_confound"):
+        return 0.0   # long-only-beta confound -> never seed the evolutionary exploit loop with it
     if v.get("dsr") is not None:
         return float(v["dsr"])                 # the deflated, multiple-testing-aware Sharpe = the natural fitness
     s, h = v.get("search_sharpe"), v.get("holdout_sharpe")
