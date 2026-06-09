@@ -109,6 +109,11 @@ def run_one_from_queue():
         with open(RUNLOG, "a") as f:
             f.write(json.dumps(outcome, default=str) + "\n")
     queue.complete(item["id"], verdict)
+    try:
+        from agent import elite
+        elite.record(outcome)  # feed the evolutionary pool (top-K by DSR) for the director to mutate
+    except Exception:
+        pass
     print(f"[{AGENT_ID}] DONE {sid} -> tier {verdict and verdict.get('tier')} | "
           f"PASSED_ALL={outcome['passed_all']}")
     return outcome

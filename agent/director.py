@@ -15,8 +15,9 @@ ROOT = Path("/root/hephaestus")
 sys.path.insert(0, str(ROOT))
 WIKI = Path("/root/research-wiki")
 
-from agent.propose import propose
+from agent.propose import propose, mutate as propose_mutate
 from agent.scout import scout
+from agent import elite
 from sdk import queue
 from sdk.locks import FileLock, LockTimeout
 
@@ -63,7 +64,8 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
         for _ in range(min(need, max_new) * 3):  # extra tries to find DIVERSE ideas
             if added >= min(need, max_new):
                 break
-            prop = propose()
+            e = elite.sample(random.Random()) if (random.random() < 0.4 and elite.top()) else None
+            prop = propose_mutate(e) if e else propose()  # 40% EXPLOIT (evolve an elite) / 60% EXPLORE (fresh)
             if "error" in prop:
                 continue
             key, th = _norm(prop.get("title", "")), _theme(prop)

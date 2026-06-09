@@ -48,6 +48,31 @@ Return ONLY a JSON object:
         return {"raw": text[:1500] or r.stdout[:800], "error": "parse_failed", "stderr": r.stderr[:300]}
 
 
+def mutate(elite: dict) -> dict:
+    """EVOLVE an elite near-miss: ONE targeted change to make it more robust / generalise better — keep what
+    worked, fix what's fragile. NOT a fresh idea. Same JSON proposal format. (Evolutionary exploit step.)"""
+    ctx = ("=== ANTI-PATTERNS (obey) ===\n" + _read("patterns/META-LESSONS.md")[:2000] +
+           "\n\n=== DATA WE OWN ===\n" + _read("DATA_CATALOG.md")[:1500])
+    prompt = f"""{ctx}
+
+ELITE STRATEGY to EVOLVE (fitness/DSR {elite.get('fitness')}):
+{json.dumps(elite.get('proposal'), indent=2)}
+
+Propose ONE targeted MUTATION to make it MORE ROBUST or GENERALISE better — e.g. a different/broader universe,
+a complementary leg, a cleaner/lower-turnover construction, a regime filter, a cost-hardening. Keep what worked;
+fix the fragile part. This is an EVOLUTION of THIS strategy, NOT a new idea, and must still obey the anti-patterns
+and use owned/free data. Return ONLY the SAME JSON proposal object (title, premium, market, data_source,
+free_or_owned, signal_approach, why_not_duplicate, prior, pairs_with, gate0_data_check, crowding_risk, scope,
+generalization_plan) with the mutation applied (title should note it's a variant)."""
+    r = subprocess.run(pi_cmd(), input=prompt, capture_output=True, text=True, timeout=300)
+    text = _assistant_text(r.stdout)
+    try:
+        s, e = text.find("{"), text.rfind("}")
+        return json.loads(text[s:e + 1])
+    except Exception:
+        return {"error": "mutate_parse_failed"}
+
+
 def _assistant_text(stream: str) -> str:
     """Return the FULL assistant message. pi streams cumulative snapshots, so return the
     longest single assistant-text candidate (the final complete message), not a concat."""
