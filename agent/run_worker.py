@@ -114,6 +114,13 @@ def run_one_from_queue():
         elite.record(outcome)  # feed the evolutionary pool (top-K by DSR) for the director to mutate
     except Exception:
         pass
+    if outcome["passed_all"]:  # PASS -> auto-deploy into the Atlas Paper Book (paper-on-live-data; no real capital)
+        try:
+            from live.deploy import deploy_to_paper
+            res = deploy_to_paper(str(mod))
+            print(f"[{AGENT_ID}] PASS -> Paper Book: {res['name']} ({res['n_positions']} positions)")
+        except Exception as e:
+            print(f"[{AGENT_ID}] deploy_to_paper failed (PASS still recorded): {str(e)[:200]}")
     print(f"[{AGENT_ID}] DONE {sid} -> tier {verdict and verdict.get('tier')} | "
           f"PASSED_ALL={outcome['passed_all']}")
     return outcome
