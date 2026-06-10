@@ -13,14 +13,28 @@ def _read(p):
     return f.read_text() if f.exists() else ""
 
 
+def _read_tail(p, max_chars: int):
+    """E5: growing files (index, candidates) are read NEWEST-LAST and capped — prompt size must
+    not rise monotonically with project history (cost, latency, 420s-timeout risk; the director
+    makes up to 12 propose calls per top-up). Curated files (overview, lessons, closed, catalog)
+    stay full: they are pruned by the weekly lint, not by truncation — dropping an anti-pattern
+    or a closed decision from the prompt would un-learn it."""
+    t = _read(p)
+    if len(t) <= max_chars:
+        return t
+    cut = t[-max_chars:]
+    nl = cut.find("\n")  # start at a whole line
+    return f"[... older entries omitted ({len(t) - max_chars} chars) ...]\n" + (cut[nl + 1:] if nl >= 0 else cut)
+
+
 def propose() -> dict:
     context = (
         "=== OVERVIEW ===\n" + _read("overview.md") +
         "\n\n=== PATTERNS & ANTI-PATTERNS (obey these) ===\n" + _read("patterns/META-LESSONS.md") +
         "\n\n=== CLOSED DECISIONS (never re-open) ===\n" + _read("decisions/CLOSED.md") +
-        "\n\n=== EXISTING EXPERIMENTS (do not duplicate) ===\n" + _read("index.md") +
+        "\n\n=== EXISTING EXPERIMENTS (do not duplicate; newest last, older omitted) ===\n" + _read_tail("index.md", 12_000) +
         "\n\n=== DATA WE OWN / CAN USE (build ONLY on these; anything else is DATA-GATED -> Gate-0 FAIL) ===\n" + _read("DATA_CATALOG.md") +
-        "\n\n=== WEB-SCOUTED CANDIDATES (fresh external ideas — prefer a strong one of these) ===\n" + _read("candidates.md")
+        "\n\n=== WEB-SCOUTED CANDIDATES (fresh external ideas — prefer a strong one of these) ===\n" + _read_tail("candidates.md", 8_000)
     )
     prompt = f"""{context}
 

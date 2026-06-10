@@ -47,8 +47,9 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
     except LockTimeout:
         return {"added": 0, "skipped": "director busy", **queue.stats()}
     try:
-        if queue.stats().get("queued", 0) >= target:
-            return {"added": 0, **queue.stats()}
+        st = queue.stats()  # E8: one read (stats() rescans the whole queue file)
+        if st.get("queued", 0) >= target:
+            return {"added": 0, **st}
         if random.random() < 0.4:
             try:
                 scout()  # occasionally pull fresh external ideas into candidates.md first
@@ -59,9 +60,10 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
         themes: dict[str, int] = {}
         for it in queue._read_all():
             if it["status"] in ("queued", "claimed"):
-                themes[_theme(it["proposal"])] = themes.get(_theme(it["proposal"]), 0) + 1
+                th = _theme(it["proposal"])
+                themes[th] = themes.get(th, 0) + 1
         added = 0
-        need = target - queue.stats().get("queued", 0)
+        need = target - st.get("queued", 0)
         for _ in range(min(need, max_new) * 3):  # extra tries to find DIVERSE ideas
             if added >= min(need, max_new):
                 break

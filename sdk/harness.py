@@ -136,6 +136,64 @@ def _mcpt_stat(spec: StrategySpec, panel, benchmark_relative: bool):
     return sh - bench
 
 
+# --- parallel plumbing (fork-only: workers inherit spec/panel/loaders by COW, no pickling of
+#     generated-strategy closures needed). Serial fallback on non-POSIX / 1 worker. ---
+_MCPT_CTX: dict = {}
+_FORK_CTX: dict = {}
+
+
+def _fork_call(item):
+    """Worker: apply the COW-inherited fn to one item -> (item, result | ('err', msg))."""
+    try:
+        return item, _FORK_CTX["fn"](item)
+    except Exception as e:
+        return item, ("err", f"{type(e).__name__}: {str(e)[:120]}")
+
+
+def _fork_map(fn, items, workers: int):
+    """Map fn over items with a fork pool (closures OK — inherited, not pickled).
+    Yields (item, result) where result may be ('err', msg). Serial fallback off-posix."""
+    items = list(items)
+    if os.name != "posix" or workers <= 1 or len(items) <= 1:
+        for it in items:
+            try:
+                yield it, fn(it)
+            except Exception as e:
+                yield it, ("err", f"{type(e).__name__}: {str(e)[:120]}")
+        return
+    import multiprocessing as mp
+    _FORK_CTX["fn"] = fn
+    try:
+        with mp.get_context("fork").Pool(min(workers, len(items))) as pool:
+            yield from pool.imap(_fork_call, items)
+    finally:
+        _FORK_CTX.clear()
+
+
+def _mcpt_one_perm(seed: int):
+    """Worker: one permutation -> statistic (or ('err', msg)). Reads _MCPT_CTX set pre-fork."""
+    rng = np.random.default_rng(seed)
+    p = _permute_panel_prices(_MCPT_CTX["panel"], rng)
+    if p is None:
+        return None
+    try:
+        return float(_mcpt_stat(_MCPT_CTX["spec"], p, _MCPT_CTX["bench_rel"]))
+    except Exception as e:  # surfaced + counted by the caller
+        return ("err", f"{type(e).__name__}: {str(e)[:100]}")
+
+
+def _mcpt_workers() -> int:
+    """Worker count: CRUCIBLE_MCPT_WORKERS env > default min(cores-2, 6). Capped because each
+    worker materializes a permuted panel copy (large-cap panels have OOM'd at 12G serial)."""
+    try:
+        env = int(os.environ.get("CRUCIBLE_MCPT_WORKERS", 0))
+    except ValueError:
+        env = 0
+    if env > 0:
+        return env
+    return max(1, min((os.cpu_count() or 2) - 2, 6))
+
+
 def _stage2_mcpt(spec: StrategySpec, panel, real_sharpe: float, n: int = 50,
                  beta_to_universe: float | None = None) -> tuple:
     """STAGE-2 MCPT (Monte Carlo Permutation Test) — runs BEFORE breadth. Permutes the price panel
@@ -152,29 +210,62 @@ def _stage2_mcpt(spec: StrategySpec, panel, real_sharpe: float, n: int = 50,
         real_stat = _mcpt_stat(spec, panel, bench_rel)
     except Exception as e:
         return {"note": f"real-stat computation failed: {type(e).__name__}: {str(e)[:100]}"}, False
-    rng = np.random.default_rng(0)
+    if _permute_panel_prices(panel, np.random.default_rng(0)) is None:
+        return {"note": "no price matrix — MCPT not applicable to this panel shape"}, True
     max_exceed = int(0.05 * (n + 1)) - 1            # max exceedances that still allow p<=0.05
+    seeds = list(range(1, n + 1))                   # deterministic, order-independent
+    n_workers = _mcpt_workers()
     perms, exceed = [], 0
-    for i in range(n):
-        p = _permute_panel_prices(panel, rng)
-        if p is None:
-            return {"note": "no price matrix — MCPT not applicable to this panel shape"}, True
-        try:
-            sh = _mcpt_stat(spec, p, bench_rel)
-        except Exception as e:
-            print(f"[mcpt] perm {i} failed: {type(e).__name__}: {str(e)[:100]}")
-            continue
+
+    def _ingest(sh) -> bool:
+        """Record one perm result; True -> failure is mathematically certain, stop."""
+        nonlocal exceed
+        if sh is None or (isinstance(sh, tuple) and sh[0] == "err"):
+            if isinstance(sh, tuple):
+                print(f"[mcpt] perm failed: {sh[1]}")
+            return False
         perms.append(sh)
         if sh >= real_stat:
             exceed += 1
-            if exceed > max_exceed:                  # fail certain — stop burning compute
-                pval = (exceed + 1) / (len(perms) + 1)
-                res = {"n_ran": len(perms), "early_stop": True, "benchmark_relative": bench_rel,
-                       "real_stat": round(real_stat, 3), "perm_mean": round(float(np.mean(perms)), 3),
-                       "perm_max": round(float(np.max(perms)), 3), "p_value_lb": round(pval, 4), "pass": False}
-                print(f"[mcpt] EARLY FAIL after {len(perms)} perms ({exceed} >= real stat {real_stat:.2f}, "
-                      f"bench_rel={bench_rel})")
-                return res, False
+        return exceed > max_exceed
+
+    stopped = False
+    if os.name == "posix" and n_workers > 1:
+        # fork pool: COW-shared panel/spec; batch-wise early-stop keeps the compute bound
+        import multiprocessing as mp
+        _MCPT_CTX.update({"spec": spec, "panel": panel, "bench_rel": bench_rel})
+        try:
+            with mp.get_context("fork").Pool(n_workers) as pool:
+                for batch_start in range(0, n, n_workers):
+                    batch = seeds[batch_start:batch_start + n_workers]
+                    for sh in pool.map(_mcpt_one_perm, batch):
+                        if _ingest(sh):
+                            stopped = True
+                            break
+                    if stopped:
+                        break
+        finally:
+            _MCPT_CTX.clear()
+    else:
+        for s in seeds:
+            rng = np.random.default_rng(s)
+            p = _permute_panel_prices(panel, rng)
+            try:
+                sh = float(_mcpt_stat(spec, p, bench_rel))
+            except Exception as e:
+                sh = ("err", f"{type(e).__name__}: {str(e)[:100]}")
+            if _ingest(sh):
+                stopped = True
+                break
+
+    if stopped:                                      # fail certain — compute stopped early
+        pval = (exceed + 1) / (len(perms) + 1)
+        res = {"n_ran": len(perms), "early_stop": True, "benchmark_relative": bench_rel,
+               "real_stat": round(real_stat, 3), "perm_mean": round(float(np.mean(perms)), 3),
+               "perm_max": round(float(np.max(perms)), 3), "p_value_lb": round(pval, 4), "pass": False}
+        print(f"[mcpt] EARLY FAIL after {len(perms)} perms ({exceed} >= real stat {real_stat:.2f}, "
+              f"bench_rel={bench_rel}, workers={n_workers})")
+        return res, False
     if not perms:
         return {"note": "all perms errored — inconclusive, treating as FAIL"}, False
     arr = np.array(perms)
@@ -183,8 +274,9 @@ def _stage2_mcpt(spec: StrategySpec, panel, real_sharpe: float, n: int = 50,
            "real_stat": round(real_stat, 3), "perm_mean": round(float(arr.mean()), 3),
            "perm_p95": round(float(np.percentile(arr, 95)), 3), "perm_max": round(float(arr.max()), 3),
            "p_value": round(pval, 4), "pass": pval <= 0.05}
-    print(f"[mcpt] {len(perms)} perms | real stat {real_stat:.2f} (bench_rel={bench_rel}) | "
-          f"perm mean {arr.mean():.2f} | p={pval:.4f} -> {'PASS' if res['pass'] else 'FAIL'}")
+    print(f"[mcpt] {len(perms)} perms ({n_workers} workers) | real stat {real_stat:.2f} "
+          f"(bench_rel={bench_rel}) | perm mean {arr.mean():.2f} | p={pval:.4f} -> "
+          f"{'PASS' if res['pass'] else 'FAIL'}")
     return res, bool(res["pass"])
 
 
@@ -201,15 +293,19 @@ def _stage2_generalize(spec: StrategySpec) -> tuple:
         return None, False, (f"stage-2 NOT runnable (load_gen_data={'set' if loader else 'missing'}, "
                              f"{len(unis)} universes declared, need >=3) -> manual battery required "
                              f"(forward/generalize.py)")
+    def _one_universe(u):
+        r_u = pd.Series(spec.signal(loader(u), **spec.default_params)[0]).dropna()
+        h_u = r_u[r_u.index >= spec.holdout_start]
+        return round(_sharpe(h_u), 2) if len(h_u) > 20 else None
+
     results = {}
-    for u in unis:
-        try:
-            r_u = pd.Series(spec.signal(loader(u), **spec.default_params)[0]).dropna()
-            h_u = r_u[r_u.index >= spec.holdout_start]
-            results[u] = round(_sharpe(h_u), 2) if len(h_u) > 20 else None
-        except Exception as e:
+    # universes are independent (own loader call each) -> parallel; capped at 3 (panel RAM)
+    for u, r in _fork_map(_one_universe, unis, workers=min(_mcpt_workers(), 3)):
+        if isinstance(r, tuple) and r and r[0] == "err":
             results[u] = None
-            print(f"[stage2] universe {u} failed: {type(e).__name__}: {str(e)[:120]}")
+            print(f"[stage2] universe {u} failed: {r[1]}")
+        else:
+            results[u] = r
     vals = [v for v in results.values() if v is not None]
     pos = sum(1 for v in vals if v > 0)
     if len(vals) < 3:
@@ -271,12 +367,23 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
               f"holdout gate forced FAIL")
     holdout = full_ret[full_ret.index >= spec.holdout_start]
     grid = {}
-    for label, kw in (spec.grid or {"default": {}}).items():
+    grid_items = list((spec.grid or {"default": {}}).items())
+    nondefault = [(label, kw) for label, kw in grid_items if kw]
+
+    def _one_variant(item):
+        label, kw = item
+        r = pd.Series(spec.signal(panel, **{**spec.default_params, **kw})[0]).dropna()
+        return r[r.index < spec.holdout_start]   # keep the Series (index) so PBO/DSR align variants by DATE
+
+    for label, kw in grid_items:
         if not kw:  # the mandated "default": {} variant == the line-1 run; reuse it (one full backtest saved per run)
             grid[label] = search
-            continue
-        r = pd.Series(spec.signal(panel, **{**spec.default_params, **kw})[0]).dropna()
-        grid[label] = r[r.index < spec.holdout_start]   # keep the Series (index) so PBO/DSR align variants by DATE
+    # independent re-runs of the frozen signal -> parallel (capped: each holds a returns series only,
+    # but the signal itself may allocate panel-sized temporaries)
+    for (label, _), r in _fork_map(_one_variant, nondefault, workers=min(_mcpt_workers(), 4)):
+        if isinstance(r, tuple) and len(r) and r[0] == "err":
+            raise RuntimeError(f"grid variant '{label}' failed: {r[1]}")  # grid is part of the frozen design
+        grid[label] = r
 
     # --- the gates (non-bypassable) ---
     result = ri.assemble_bundle(search.values, trades, grid_returns=grid)

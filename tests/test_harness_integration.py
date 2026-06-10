@@ -162,3 +162,28 @@ def test_write_once_holdout_enforced(tmp_env):
     assert v2["holdout_burned"] is True, "second look must be detected"
     assert v2["holdout_pass"] is False, "second look must force holdout FAIL"
     assert any("WRITE-ONCE" in r for r in v2["holdout_reasons"])
+
+
+def test_parallel_paths_match_serial(tmp_env, monkeypatch):
+    """E1 regression: parallel MCPT/grid must produce IDENTICAL verdicts to serial."""
+    from sdk import harness
+
+    def momo_signal(panel, lookback=60, **_):
+        rets = panel.pct_change()
+        w = panel.pct_change(lookback).clip(-1, 1)
+        w = w.div(w.abs().sum(axis=1), axis=0).shift(1)
+        daily = (w * rets).sum(axis=1)
+        boost = pd.Series(0.0006, index=daily.index)
+        boost[daily.index >= "2024-01-01"] = 0.0
+        return daily + boost, _trades_from(w, panel)
+
+    grid = {"default": {}, "lb40": {"lookback": 40}, "lb120": {"lookback": 120}}
+    spec_p = _make_spec(harness, momo_signal, "t-par", grid=grid)
+    v_par = harness.run_experiment(spec_p, write_wiki=False, alert=False)
+
+    monkeypatch.setenv("CRUCIBLE_MCPT_WORKERS", "1")
+    spec_s = _make_spec(harness, momo_signal, "t-ser", grid=grid)
+    v_ser = harness.run_experiment(spec_s, write_wiki=False, alert=False)
+
+    for k in ["tier", "dsr", "median_cpcv", "pbo", "search_sharpe", "holdout_sharpe", "stage1_pass"]:
+        assert v_par[k] == v_ser[k], f"parallel/serial divergence on {k}: {v_par[k]} != {v_ser[k]}"

@@ -5,9 +5,28 @@ warnings.filterwarnings("ignore")
 import numpy as np, pandas as pd
 
 
+def _day_cache(kind: str, key_parts):
+    """Per-day parquet cache path for network adapters (yfinance/FRED): the same request twice in
+    one day (3 smiths, batteries, MCPT setup) = one download. Keyed by request + date, so it's
+    never stale by more than a day and never wrong. Returns None if the cache dir is unwritable."""
+    import hashlib
+    from crucible_paths import DATA
+    h = hashlib.sha256(repr(sorted(map(str, key_parts))).encode()).hexdigest()[:16]
+    d = os.path.join(str(DATA), "cache", "net")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return None
+    return os.path.join(d, f"{kind}_{h}_{pd.Timestamp.today():%Y%m%d}.parquet")
+
+
 def yf_panel(tickers, start="2005-01-01") -> pd.DataFrame:
-    """Close panel for a list of yfinance tickers (business-day grid). Handles single/multi shapes."""
+    """Close panel for a list of yfinance tickers (business-day grid). Handles single/multi shapes.
+    Day-cached on disk (E4): repeated calls across smiths/batteries hit Yahoo once per day."""
     import yfinance as yf
+    cache = _day_cache("yf", [*tickers, start])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)
     raw = yf.download(list(tickers), start=start, progress=False, group_by="ticker", auto_adjust=False)
     cols = {}
     for t in tickers:
@@ -24,13 +43,26 @@ def yf_panel(tickers, start="2005-01-01") -> pd.DataFrame:
             cols[t] = s
     panel = pd.DataFrame(cols).sort_index()
     bidx = pd.date_range(panel.index.min(), panel.index.max(), freq="B")
-    return panel.reindex(bidx).ffill(limit=3)
+    panel = panel.reindex(bidx).ffill(limit=3)
+    if cache:
+        try:
+            tmp = cache + ".tmp"
+            panel.to_parquet(tmp)
+            os.replace(tmp, cache)
+        except OSError:
+            pass
+    return panel
 
 
 def fred_series(series_ids, start="2005-01-01") -> pd.DataFrame:
-    """Daily-ffilled FRED series panel. series_ids: dict {fred_id: column_name} or list."""
+    """Daily-ffilled FRED series panel. series_ids: dict {fred_id: column_name} or list.
+    Day-cached on disk (E4)."""
     import urllib.request
     from crucible_paths import SECRETS
+    cache = _day_cache("fred", [*(series_ids if isinstance(series_ids, (list, tuple))
+                                  else sorted(series_ids.items())), start])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)
     key = os.environ.get("FRED_API_KEY") or json.load(open(SECRETS))["fred_api_key"]
     if isinstance(series_ids, (list, tuple)):
         series_ids = {s: s for s in series_ids}
@@ -42,7 +74,15 @@ def fred_series(series_ids, start="2005-01-01") -> pd.DataFrame:
         out[col] = pd.Series({pd.Timestamp(o["date"]): float(o["value"])
                               for o in d["observations"] if o["value"] != "."}).sort_index()
     df = pd.DataFrame(out).sort_index()
-    return df.reindex(pd.date_range(df.index.min(), df.index.max(), freq="B")).ffill()
+    df = df.reindex(pd.date_range(df.index.min(), df.index.max(), freq="B")).ffill()
+    if cache:
+        try:
+            tmp = cache + ".tmp"
+            df.to_parquet(tmp)
+            os.replace(tmp, cache)
+        except OSError:
+            pass
+    return df
 
 
 def trend_returns(**params):
@@ -69,16 +109,25 @@ SHARADAR_DIR = str(DATA / "sharadar")
 _CACHE_DIR = str(DATA / "cache")
 
 
+def _stale(out: str, src: str) -> bool:
+    """Cache invalidation (E4): a fresh source drop must rebuild the derived parquet."""
+    return (not os.path.exists(out)) or (os.path.exists(src) and os.path.getmtime(src) > os.path.getmtime(out))
+
+
 def _sep_cache() -> str:
-    """Build/load a cached long parquet of owned Sharadar SEP (one-time ~1-2min build)."""
+    """Build/load a cached long parquet of owned Sharadar SEP (one-time ~1-2min build).
+    Rebuilds automatically when SEP.zip is newer than the cache (fresh data drop)."""
     import zipfile
     out = os.path.join(_CACHE_DIR, "sep_long.parquet")
-    if not os.path.exists(out):
+    src = os.path.join(SHARADAR_DIR, "SEP.zip")
+    if _stale(out, src):
         os.makedirs(_CACHE_DIR, exist_ok=True)
-        z = zipfile.ZipFile(os.path.join(SHARADAR_DIR, "SEP.zip"))
+        z = zipfile.ZipFile(src)
         with z.open(z.namelist()[0]) as f:
             df = pd.read_csv(f, usecols=["ticker", "date", "closeadj", "volume"], parse_dates=["date"])
-        df.sort_values("ticker").to_parquet(out, index=False, row_group_size=500_000)
+        tmp = out + ".tmp"
+        df.sort_values("ticker").to_parquet(tmp, index=False, row_group_size=500_000)
+        os.replace(tmp, out)
     return out
 
 
@@ -88,11 +137,13 @@ def sep_panel(tickers=None, start="2000-01-01", end=None, field="closeadj") -> p
     PREFER THIS over yf_panel for US stocks (yfinance has survivorship bias — a wiki anti-pattern).
     tickers=None loads ALL (~16k, heavy) — pass a list (e.g. from us_universe())."""
     path = _sep_cache()
-    filt = [("ticker", "in", list(tickers))] if tickers is not None else None
-    df = pd.read_parquet(path, columns=["ticker", "date", field], filters=filt)
-    df = df[df["date"] >= pd.Timestamp(start)]
+    # E3: push date bounds into the parquet scan (row-group pruning) instead of filtering in pandas
+    filt = [("date", ">=", pd.Timestamp(start))]
     if end is not None:
-        df = df[df["date"] <= pd.Timestamp(end)]
+        filt.append(("date", "<=", pd.Timestamp(end)))
+    if tickers is not None:
+        filt.append(("ticker", "in", list(tickers)))
+    df = pd.read_parquet(path, columns=["ticker", "date", field], filters=[filt])
     panel = df.pivot_table(index="date", columns="ticker", values=field).sort_index()
     if panel.empty:
         return panel
@@ -126,9 +177,20 @@ def us_universe(sector=None, category="Domestic Common Stock", marketcap=None,
         if len(names) > 3000 and not marketcap:
             tk = tk[~tk["scalemarketcap"].fillna("").str.contains("Nano|Micro", case=False, regex=True)]
             names = sorted(tk["ticker"].dropna().unique().tolist())
-        px = sep_panel(names, start="2015-01-01", field="closeadj")
-        vol = sep_panel(names, start="2015-01-01", field="volume")
-        dollar = (px * vol).tail(252).median().dropna()
+        # E3: ONE parquet scan for both fields; then the EXACT sep_panel grid transform
+        # (business-day reindex + ffill(limit=3)) so the liquidity ranking is byte-identical
+        # to the historical two-call path (universe selection is part of frozen pre-regs).
+        path = _sep_cache()
+        df = pd.read_parquet(path, columns=["ticker", "date", "closeadj", "volume"],
+                             filters=[[("date", ">=", pd.Timestamp("2015-01-01")),
+                                       ("ticker", "in", names)]])
+
+        def _grid(field):
+            panel = df.pivot_table(index="date", columns="ticker", values=field).sort_index()
+            bidx = pd.date_range(panel.index.min(), panel.index.max(), freq="B")
+            return panel.reindex(bidx).ffill(limit=3)
+
+        dollar = (_grid("closeadj") * _grid("volume")).tail(252).median().dropna()
         names = sorted(dollar.nlargest(min(top_n, len(dollar))).index.tolist())
     return names
 
@@ -136,12 +198,15 @@ def us_universe(sector=None, category="Domestic Common Stock", marketcap=None,
 def _sf1_cache() -> str:
     import zipfile
     out = os.path.join(_CACHE_DIR, "sf1_long.parquet")
-    if not os.path.exists(out):
+    src = os.path.join(SHARADAR_DIR, "SF1.zip")
+    if _stale(out, src):
         os.makedirs(_CACHE_DIR, exist_ok=True)
-        z = zipfile.ZipFile(os.path.join(SHARADAR_DIR, "SF1.zip"))
+        z = zipfile.ZipFile(src)
         with z.open(z.namelist()[0]) as f:
             df = pd.read_csv(f, parse_dates=["datekey", "calendardate"], low_memory=False)
-        df.sort_values("ticker").to_parquet(out, index=False, row_group_size=200_000)
+        tmp = out + ".tmp"
+        df.sort_values("ticker").to_parquet(tmp, index=False, row_group_size=200_000)
+        os.replace(tmp, out)
     return out
 
 
