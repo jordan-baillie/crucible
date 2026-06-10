@@ -52,8 +52,8 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
         if random.random() < 0.4:
             try:
                 scout()  # occasionally pull fresh external ideas into candidates.md first
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[director] scout failed (non-fatal): {e}")
         tested, inflight = _tested_titles(), queue.inflight_titles()
         # seed per-theme counts from what's already in-flight, so we cap clustering (max 2/theme)
         themes: dict[str, int] = {}

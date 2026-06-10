@@ -2,7 +2,26 @@
 from datetime import date
 from pathlib import Path
 
+import os
+import tempfile
+
 from crucible_paths import WIKI  # central config
+from sdk.locks import FileLock
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """temp-file + os.replace so a crash mid-write never leaves a torn page."""
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def write_experiment(spec, verdict: dict):
@@ -27,7 +46,7 @@ def write_experiment(spec, verdict: dict):
                       f"-> versioned page {page.name}")
         except Exception:
             pass
-    page.write_text(f"""---
+    _atomic_write(page, f"""---
 id: {spec.id}
 status: {status}
 project: {spec.project}
@@ -54,10 +73,12 @@ generated_by: crucible-agent
 - needs_confirmation: {verdict.get('needs_confirmation') or 'none'}
 - **PASSED ALL GATES: {verdict['PASSED_ALL_GATES']}**
 """)
-    # append to log + index (use the page stem — may be the versioned name on collision)
+    # append to log + index (use the page stem — may be the versioned name on collision).
+    # 3 smiths finish concurrently: serialize the shared-file appends.
     stem = page.stem
-    with open(WIKI / "log.md", "a") as f:
-        f.write(f"\n## [{date.today()}] experiment | {stem} -> {status} (tier {verdict['tier']}, holdout {verdict['holdout_pass']})")
-    with open(WIKI / "index.md", "a") as f:
-        f.write(f"\n- [[experiments/{stem}]] — {status} ({spec.title})")
+    with FileLock("wiki-append", ttl=30):
+        with open(WIKI / "log.md", "a") as f:
+            f.write(f"\n## [{date.today()}] experiment | {stem} -> {status} (tier {verdict['tier']}, holdout {verdict['holdout_pass']})")
+        with open(WIKI / "index.md", "a") as f:
+            f.write(f"\n- [[experiments/{stem}]] — {status} ({spec.title})")
     return page

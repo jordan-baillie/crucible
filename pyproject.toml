@@ -18,5 +18,5 @@ dependencies = [
 data = ["yfinance"]  # yf_panel adapter; Sharadar/FRED need no extra packages
 
 [tool.setuptools]
-packages = ["agent", "sdk", "live", "forward", "strategies"]
+packages = ["agent", "sdk", "live"]
 py-modules = ["crucible_paths"]

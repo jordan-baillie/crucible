@@ -10,7 +10,7 @@ def digest(n=5):
     if not rl.exists(): return
     runs = [json.loads(l) for l in rl.read_text().splitlines() if l.strip()][-n:]
     if not runs: return
-    lines = ["🔨 <b>Hephaestus digest</b> — last %d cycles\n" % len(runs)]
+    lines = ["🔨 <b>Crucible digest</b> — last %d cycles\n" % len(runs)]
     for r in runs:
         v = r.get("verdict") or {}
         mark = "🟢 PASS" if r.get("passed_all") else ("✗ fail" if r.get("ran") else "⚠ codegen-failed")

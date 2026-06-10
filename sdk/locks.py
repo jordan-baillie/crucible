@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from crucible_paths import LOCKS
-LOCK_DIR = Path(os.environ.get("HEPH_LOCK_DIR", LOCKS))
+LOCK_DIR = Path(os.environ.get("CRUCIBLE_LOCK_DIR", os.environ.get("HEPH_LOCK_DIR", LOCKS)))
 
 
 def _me() -> str:
@@ -52,12 +52,31 @@ class FileLock:
             return False
 
     def _steal_if_stale(self) -> None:
+        """Steal an EXPIRED lock without the read->check->unlink TOCTOU.
+
+        Naive unlink races: between B reading an expired payload and unlinking, holder A can
+        release and C can acquire -- B then deletes C's LIVE lock and two holders coexist.
+        Fix: atomically RENAME the lock to a unique name first (only one stealer wins the
+        rename), then inspect the renamed file and delete it only if it really was expired
+        (if it was live after all, restore it)."""
+        claim = self.path.with_suffix(f".steal.{os.getpid()}.{time.monotonic_ns()}")
         try:
-            data = json.loads(self.path.read_text())
-            if time.time() > float(data.get("expires", 0)):
-                self.path.unlink(missing_ok=True)  # expired -> reclaim
-        except (FileNotFoundError, ValueError):
-            self.path.unlink(missing_ok=True)
+            os.rename(self.path, claim)  # atomic: exactly one stealer can win
+        except FileNotFoundError:
+            return  # released (or stolen) meanwhile
+        try:
+            data = json.loads(claim.read_text())
+            expired = time.time() > float(data.get("expires", 0))
+        except ValueError:
+            expired = True  # corrupt payload -> treat as dead
+        if expired:
+            claim.unlink(missing_ok=True)
+        else:
+            # live lock grabbed by mistake -- put it back (acquire() will keep waiting)
+            try:
+                os.rename(claim, self.path)
+            except OSError:
+                claim.unlink(missing_ok=True)
 
     def acquire(self) -> "FileLock":
         LOCK_DIR.mkdir(parents=True, exist_ok=True)

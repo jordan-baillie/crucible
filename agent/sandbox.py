@@ -25,6 +25,10 @@ _BANNED_ATTRS = {
     "system", "popen", "remove", "unlink", "rmtree", "rmdir", "mkdir", "makedirs",
     "write_text", "write_bytes", "spawn", "spawnv", "fork", "kill", "chmod", "chown",
     "putenv", "setuid", "execv", "execve", "connect", "sendall", "urlopen",
+    # pandas/numpy carry their own I/O -- a "helpful" LLM caching to disk or fetching a URL
+    # via read_csv bypasses the open()/urllib bans without these:
+    "to_csv", "to_parquet", "to_pickle", "to_hdf", "to_excel", "to_sql", "to_feather",
+    "read_pickle", "save", "savez", "savetxt",
 }
 
 
@@ -50,6 +54,13 @@ def scan_code(code: str) -> str | None:
             if name in _BANNED_CALLS:
                 # allow open(...) only if it's NOT a write mode — simplest: ban all open()
                 return f"{name}() call"
+            # network fetch via pandas readers (read_csv("https://...") etc.) bypasses the urllib ban
+            attr = getattr(fn, "attr", "")
+            if attr.startswith("read_") or attr == "read_html":
+                for arg in list(node.args) + [kw.value for kw in node.keywords]:
+                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str) \
+                            and arg.value.lower().startswith(("http://", "https://", "ftp://")):
+                        return f".{attr}('{arg.value[:40]}...') network fetch"
         elif isinstance(node, ast.Attribute):
             if node.attr in _BANNED_ATTRS:
                 return f".{node.attr}() use"
@@ -63,8 +74,17 @@ def apply_rlimits() -> None:
     """preexec_fn for the run subprocess: cap CPU time and file size (fork/runaway guards).
 
     Deliberately NO RLIMIT_AS (it breaks numpy/BLAS over-reservation); the wall-clock timeout
-    + RLIMIT_CPU bound runaway compute, the import denylist bounds fork bombs."""
-    import resource
+    + RLIMIT_CPU bound runaway compute, the import denylist bounds fork bombs.
+
+    Non-POSIX hosts (no `resource` module): degrades to no rlimits with a LOUD warning —
+    the AST denylist + wall-clock timeout still apply."""
+    try:
+        import resource
+    except ImportError:
+        import sys
+        print("[sandbox] WARNING: resource module unavailable (non-POSIX) -- "
+              "running WITHOUT rlimits; AST denylist + timeout still active", file=sys.stderr)
+        return
     try:
         resource.setrlimit(resource.RLIMIT_CPU, (1500, 1700))            # ~25 min CPU
         resource.setrlimit(resource.RLIMIT_FSIZE, (256 * 1024**2,) * 2)   # 256 MB max file write

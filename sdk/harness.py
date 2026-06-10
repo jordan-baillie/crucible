@@ -15,6 +15,7 @@ import pandas as pd
 
 # rails (per-project FDR/holdout state lives in the research-wiki so it's SHARED across agents)
 from crucible_paths import WIKI, REGISTRY
+from sdk.locks import FileLock
 os.environ.setdefault("RESEARCH_INTEGRITY_DIR", str(REGISTRY))
 import research_integrity as ri
 
@@ -233,11 +234,13 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         with FileLock("fdr-registry", ttl=120):
             n_fam = ri.distinct_families(extra=spec.family)
             bar = ri.promote_dsr(n_fam)
+            registry_recorded = True
             try:
                 ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": "SCREEN_FAIL",
                     "dsr": None, "promote_dsr": bar, "n_families": n_fam, "holdout_touched": False, "passed_all": False})
-            except Exception:
-                pass
+            except Exception as e:  # FDR-bar integrity: NEVER silent (a frozen bar = multi-agent false-discovery risk)
+                registry_recorded = False
+                print(f"[harness] REGISTRY APPEND FAILED ({spec.id}): {e} -- FDR bar is NOT rising; investigate now")
         verdict = {
             "id": spec.id, "family": spec.family, "title": spec.title, "markets": spec.markets,
             "tier": "SCREEN_FAIL", "promote_bar": round(bar, 3), "n_families": n_fam,
@@ -248,17 +251,30 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             "full_sharpe": round(_sharpe(full_ret), 3), "full_maxdd": round(_maxdd(full_ret), 3), "n_trades": len(trades),
             "stage1_pass": False, "confirmed": False, "scope": getattr(spec, "scope", "broad"),
             "needs_confirmation": None, "generalization": None, "generalization_note": None,
-            "PASSED_ALL_GATES": False,
+            "PASSED_ALL_GATES": False, "registry_recorded": registry_recorded,
         }
         if write_wiki:
             from sdk.wiki import write_experiment
             write_experiment(spec, verdict)
         return verdict
 
-    # earned the full rails + the OOS look
+    # earned the full rails + the OOS look.
+    # WRITE-ONCE HOLDOUT ENFORCEMENT (invariant #4): one OOS look per frozen config, EVER.
+    # The ledger is the refusal mechanism, not just a record -- a second look at the same
+    # quarantined slice converts "out-of-sample" into "in-sample with extra steps".
+    cfg_hash = ri.config_hash(spec.id, spec.default_params, str(spec.markets))
+    prior = ri.ledger_lookup(cfg_hash)
+    holdout_burned = prior is not None
+    if holdout_burned:
+        print(f"[harness] HOLDOUT ALREADY BURNED for {spec.id} (hash {cfg_hash}, "
+              f"first look {prior.get('ts', '?')}) -- refusing a second OOS read; "
+              f"holdout gate forced FAIL")
     holdout = full_ret[full_ret.index >= spec.holdout_start]
     grid = {}
     for label, kw in (spec.grid or {"default": {}}).items():
+        if not kw:  # the mandated "default": {} variant == the line-1 run; reuse it (one full backtest saved per run)
+            grid[label] = search
+            continue
         r = pd.Series(spec.signal(panel, **{**spec.default_params, **kw})[0]).dropna()
         grid[label] = r[r.index < spec.holdout_start]   # keep the Series (index) so PBO/DSR align variants by DATE
 
@@ -273,6 +289,19 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     h_sh = _sharpe(holdout)  # s_sh computed above (survived the tier-0 screen)
     deg = (h_sh - s_sh) / abs(s_sh) * 100 if abs(s_sh) > 0.1 else None
     h_pass, h_reasons = ri.holdout_gate(h_sh, deg, dep["passed"])
+    if holdout_burned:
+        h_pass = False
+        h_reasons = list(h_reasons) + [
+            f"WRITE-ONCE VIOLATION: holdout already burned for config {cfg_hash} "
+            f"(first look {prior.get('ts', '?')}); this re-read cannot count as out-of-sample"]
+    else:
+        try:
+            ri.ledger_append({"config_hash": cfg_hash, "strategy": spec.id, "family": spec.family,
+                              "ts": pd.Timestamp.now().isoformat(),
+                              "holdout_start": spec.holdout_start, "holdout_sharpe": round(h_sh, 4)})
+        except Exception as e:
+            print(f"[harness] WARNING: holdout ledger append failed ({e}) -- "
+                  f"write-once enforcement degraded for {spec.id}")
     # SEARCH-SANITY: a holdout "pass" is meaningless if there was no in-sample edge to confirm.
     # Guards the degenerate case search_sharpe~=0 -> degradation blows up -> spurious holdout pass
     # (this falsely flagged a credit-carry book that the trend over-blend had sunk to ~0 as a near-miss).
@@ -292,7 +321,6 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
                          and decomp.get("selection_alpha_sharpe") is not None
                          and decomp["selection_alpha_sharpe"] < SEL_FLOOR)
 
-    from sdk.locks import FileLock
     with FileLock("fdr-registry", ttl=120):
         n_fam = ri.distinct_families(extra=spec.family)
         bar = ri.promote_dsr(n_fam)
@@ -304,12 +332,14 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             h_reasons = list(h_reasons) + [
                 f"BETA-CONFOUND: beta_to_universe {decomp['beta_to_universe']} + selection-alpha Sharpe "
                 f"{decomp['selection_alpha_sharpe']} < {SEL_FLOOR} -> edge is long-only universe beta, demoted"]
+        registry_recorded = True
         try:
             ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": tier,
                                     "dsr": b.get("dsr"), "promote_dsr": bar, "n_families": n_fam,
                                     "holdout_touched": True, "passed_all": stage1_pass})
-        except Exception:
-            pass
+        except Exception as e:  # FDR-bar integrity: NEVER silent
+            registry_recorded = False
+            print(f"[harness] REGISTRY APPEND FAILED ({spec.id}): {e} -- FDR bar is NOT rising; investigate now")
 
     # POLICY: a stage-1 pass is a CANDIDATE. PASSED_ALL_GATES requires INDEPENDENT fluke-confirmation.
     # BROAD scope: the cross-universe battery runs HERE, same-night, on the PRE-DECLARED untouched
@@ -356,7 +386,8 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "needs_confirmation": (None if not stage1_pass or passed_all else
             ("cross-market-generalization" if getattr(spec, "scope", "broad") == "broad" else "forward-validation")),
         "generalization": gen_results, "generalization_note": gen_note,
-        "PASSED_ALL_GATES": passed_all,
+        "PASSED_ALL_GATES": passed_all, "registry_recorded": registry_recorded,
+        "holdout_burned": holdout_burned, "config_hash": cfg_hash,
     }
 
     if write_wiki:

@@ -46,6 +46,12 @@ def record(outcome: dict) -> None:
         return
     if _family(outcome) in _closed_families():
         return  # falsified family — do not seed the evolutionary loop with it
+    from sdk.locks import FileLock
+    with FileLock("elite-pool", ttl=60):
+        _record_locked(outcome, fit)
+
+
+def _record_locked(outcome: dict, fit: float) -> None:
     items = _load()
     items.append({"id": outcome.get("id"), "fitness": round(fit, 4), "title": outcome.get("title"),
                   "proposal": outcome.get("proposal"), "ts": outcome.get("ts")})

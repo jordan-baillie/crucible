@@ -46,7 +46,8 @@ def _run_module(mod_stem: str):
             f"v = run_experiment(m.SPEC, write_wiki=True, alert=True)\n"
             f"import json; print('VERDICT_JSON='+json.dumps({{k:v[k] for k in v}}, default=str))\n")
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
-                       timeout=2700, cwd=str(ROOT), preexec_fn=apply_rlimits)  # headroom for the stage-2 cross-universe battery on a stage-1 pass
+                       timeout=2700, cwd=str(ROOT),
+                       preexec_fn=apply_rlimits if os.name == 'posix' else None)  # headroom for the stage-2 cross-universe battery on a stage-1 pass
     m = re.search(r"VERDICT_JSON=(\{.*\})", r.stdout)
     return (json.loads(m.group(1)) if m else None), (r.stdout + "\n" + r.stderr)
 

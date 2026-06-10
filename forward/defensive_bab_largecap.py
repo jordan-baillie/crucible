@@ -4,8 +4,9 @@ Defensive premium — Betting-Against-Beta (BAB), standalone.
 Economic thesis (Frazzini-Pedersen / AQR defensive premium): leverage-constrained
 investors bid up high-beta stocks, so low-beta names earn higher RISK-ADJUSTED
 returns. A beta-neutral book that levers LOW-beta names and de-levers HIGH-beta
-names harvests this. We test it STANDALONE (no trend pairing) in mid-cap names
-where the anomaly is less arbitraged than in the largest liquid mega-caps.
+names harvests this. LARGE-CAP variant of the mid-cap experiment (defensive_bab,
+full-gate PASS 2026-06-09): same frozen design, large-cap universe — tests whether
+the premium survives where arbitrage capital is most active. NOT YET RUN.
 """
 
 from sdk.harness import StrategySpec
@@ -21,7 +22,7 @@ _SECTORS = ['Healthcare', 'Financial Services', 'Technology', 'Consumer Cyclical
 
 # ----------------------------------------------------------------------------- data
 def load_data() -> pd.DataFrame:
-    """Survivorship-clean mid-cap US panel (Sharadar SEP) + per-ticker sector map."""
+    """Survivorship-clean LARGE-cap US panel (Sharadar SEP) + per-ticker sector map."""
     sector_map = {}
     for s in _SECTORS:
         try:
@@ -155,18 +156,19 @@ def signal(panel, **params):
 
 # ----------------------------------------------------------------------------- spec
 SPEC = StrategySpec(
-    id="defensive_bab",
+    id="defensive_bab_largecap",
     family="defensive",
-    title="Betting-Against-Beta defensive premium (standalone, mid-cap, beta-neutral)",
-    markets=["US equities (Sharadar SEP, mid-cap)"],
-    data_desc="Survivorship-clean mid-cap US daily closeadj (Sharadar SEP); "
+    title="Betting-Against-Beta defensive premium (standalone, LARGE-cap, beta-neutral)",
+    markets=["US equities (Sharadar SEP, large-cap)"],
+    data_desc="Survivorship-clean large-cap US daily closeadj (Sharadar SEP); "
               "rolling 1y beta vs equal-weight market; rolling 63d vol for inv-vol sizing.",
     pre_registration=(
         "H: leverage-constrained demand makes LOW-beta stocks cheap on a risk-adjusted "
         "basis (Frazzini-Pedersen defensive premium). A beta-neutral book that inverse-vol "
         "weights and levers the lowest-beta tercile against the highest-beta tercile should "
-        "earn a positive net-of-cost Sharpe. Tested in MID-CAPS (anomaly less arbitraged "
-        "than mega-caps). STANDALONE test — no trend pairing; only consider a tail overlay "
+        "earn a positive net-of-cost Sharpe. Tested in LARGE-CAPS (the hostile case: the "
+        "anomaly faces maximum arbitrage capital; mid-cap variant already passed all gates "
+        "2026-06-09). STANDALONE test — no trend pairing; only consider a tail overlay "
         "later if it cuts DD without diluting standalone Sharpe. Predict modest positive "
         "Sharpe; trend-style crisis convexity NOT expected (this is a calm-premium book)."
     ),

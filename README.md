@@ -143,7 +143,10 @@ verdict. Watch the wiki grow.
 
 ```bash
 # systemd templates: 3 parallel smiths at 03:30 + morning report + state backup + wiki lint
-sed -i "s|/root/crucible|$(pwd)|g" systemd/*.service systemd/*.timer   # point at your clone
+# Point ALL hardcoded paths at your environment (repo, wiki, data, backup dir):
+sed -i "s|/root/crucible|$(pwd)|g; s|/root/research-wiki|$CRUCIBLE_WIKI|g; \
+        s|/root/atlas/data|$CRUCIBLE_DATA|g; s|/root/backups|$HOME/backups|g" \
+    systemd/*.service systemd/*.timer
 sudo cp systemd/crucible-*.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now crucible-forge.timer crucible-morning-report.timer

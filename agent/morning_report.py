@@ -8,7 +8,7 @@ Sections:
   4. Ops: service failures, queue state, killswitch.
 
 Replaces digest.py as the human-facing daily picture (digest.py retained for ad-hoc use).
-Scheduled by hephaestus-morning-report.timer at 07:00 AEST (after the 03:30 forge night).
+Scheduled by crucible-morning-report.timer at 07:00 AEST (after the 03:30 forge night).
 """
 import json
 import subprocess
@@ -48,7 +48,7 @@ def forge_section() -> list:
     runs = [r for r in _jsonl(RUNLOG) if r.get("ts", "") > cutoff]
     lines = [f"🔨 <b>Forge night</b> — {len(runs)} cycles"]
     if not runs:
-        lines.append("  (no cycles — check hephaestus-forge.timer)")
+        lines.append("  (no cycles — check crucible-forge.timer)")
         return lines
     n_pass = sum(1 for r in runs if r.get("passed_all"))
     tiers = {}
@@ -153,12 +153,15 @@ def ops_section() -> list:
     lines = []
     if (ROOT / "LOOP_DISABLED").exists():
         lines.append("⛔ LOOP_DISABLED is set — forge halted")
-    failed = subprocess.run(["systemctl", "--failed", "--no-legend", "--plain"],
-                            capture_output=True, text=True, timeout=5).stdout.strip()
-    relevant = [l.split()[0] for l in failed.splitlines()
-                if any(k in l for k in ("heph", "atlas", "forward"))]
-    if relevant:
-        lines.append("🔴 failed units: " + ", ".join(relevant))
+    try:
+        failed = subprocess.run(["systemctl", "--failed", "--no-legend", "--plain"],
+                                capture_output=True, text=True, timeout=5).stdout.strip()
+        relevant = [l.split()[0] for l in failed.splitlines()
+                    if any(k in l for k in ("crucible", "heph", "atlas", "forward"))]
+        if relevant:
+            lines.append("🔴 failed units: " + ", ".join(relevant))
+    except Exception:
+        pass  # non-systemd host: skip unit health
     try:
         from sdk import queue
         q = queue.stats()

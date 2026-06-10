@@ -6,11 +6,9 @@ import json, subprocess
 from datetime import date
 from pathlib import Path
 from agent.propose import _assistant_text
-from agent.config import MODEL
+from agent.config import MODEL, pi_cmd
 
 from crucible_paths import WIKI  # central config
-BRAVE = "/root/.pi/agent/skills/pi-skills/brave-search/search.js"
-SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 
 
 def _read(p):
