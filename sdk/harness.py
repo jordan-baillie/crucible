@@ -90,6 +90,76 @@ def _beta_decomp(search_ret, price_mx):
         return None
 
 
+def _permute_panel_prices(panel, rng):
+    """Permute each asset's daily PRICE returns (destroys serial + cross-sectional structure, keeps the
+    marginal distribution and the listing/delisting NaN shape); rebuild prices; keep every non-price
+    block (volume, bvps, ...) as-is. Returns the permuted panel, or None if no price matrix found."""
+    px = _price_matrix(panel)
+    if px is None:
+        return None
+    rets = px.pct_change()
+    out = {}
+    for c in rets.columns:
+        s = rets[c]
+        mask = s.notna()
+        perm = s.copy()
+        perm[mask] = rng.permutation(s[mask].values)
+        out[c] = perm
+    sh = pd.DataFrame(out, index=rets.index)
+    px_p = (1 + sh.fillna(0)).cumprod()
+    px_p = px_p.div(px_p.bfill().iloc[0]).mul(px.bfill().iloc[0])
+    px_p = px_p.where(px.notna())
+    if isinstance(panel.columns, pd.MultiIndex):
+        lvl0 = list(dict.fromkeys(panel.columns.get_level_values(0)))
+        price_key = next(k for k in ("px", "close", "closeadj", "price", "prices", "adj_close") if k in lvl0)
+        blocks = {k: (px_p if k == price_key else panel[k]) for k in lvl0}
+        new = pd.concat(blocks, axis=1)
+    else:
+        new = px_p
+    new.attrs = dict(panel.attrs)
+    return new
+
+
+def _stage2_mcpt(spec: StrategySpec, panel, real_sharpe: float, n: int = 50) -> tuple:
+    """STAGE-2 MCPT (Monte Carlo Permutation Test) — runs BEFORE breadth. Permutes the price panel
+    (no structure left to exploit), re-runs the FROZEN signal, p = P(perm >= real). A construction
+    artifact (vol-targeted noise-sorting, bid-ask bounce harvesting, long-only beta) reproduces on
+    permuted data -> high p. Breadth CANNOT catch these (they replicate on every universe — confirmed
+    twice: value×mom p=0.97 after 2/2 tiers, amihud p=0.94 after 3/3 universes). PASS bar p<=0.05.
+    Early-stops once enough exceedances make p>0.05 mathematically certain. Returns (result, passed)."""
+    rng = np.random.default_rng(0)
+    max_exceed = int(0.05 * (n + 1)) - 1            # max exceedances that still allow p<=0.05
+    perms, exceed = [], 0
+    for i in range(n):
+        p = _permute_panel_prices(panel, rng)
+        if p is None:
+            return {"note": "no price matrix — MCPT not applicable to this panel shape"}, True
+        try:
+            sh = _sharpe(pd.Series(spec.signal(p, **spec.default_params)[0]).dropna())
+        except Exception as e:
+            print(f"[mcpt] perm {i} failed: {type(e).__name__}: {str(e)[:100]}")
+            continue
+        perms.append(sh)
+        if sh >= real_sharpe:
+            exceed += 1
+            if exceed > max_exceed:                  # fail certain — stop burning compute
+                pval = (exceed + 1) / (len(perms) + 1)
+                res = {"n_ran": len(perms), "early_stop": True, "perm_mean": round(float(np.mean(perms)), 3),
+                       "perm_max": round(float(np.max(perms)), 3), "p_value_lb": round(pval, 4), "pass": False}
+                print(f"[mcpt] EARLY FAIL after {len(perms)} perms ({exceed} >= real {real_sharpe:.2f})")
+                return res, False
+    if not perms:
+        return {"note": "all perms errored — inconclusive, treating as FAIL"}, False
+    arr = np.array(perms)
+    pval = float((np.sum(arr >= real_sharpe) + 1) / (len(arr) + 1))
+    res = {"n_ran": len(perms), "early_stop": False, "perm_mean": round(float(arr.mean()), 3),
+           "perm_p95": round(float(np.percentile(arr, 95)), 3), "perm_max": round(float(arr.max()), 3),
+           "p_value": round(pval, 4), "pass": pval <= 0.05}
+    print(f"[mcpt] {len(perms)} perms | real {real_sharpe:.2f} | perm mean {arr.mean():.2f} | "
+          f"p={pval:.4f} -> {'PASS' if res['pass'] else 'FAIL'}")
+    return res, bool(res["pass"])
+
+
 def _stage2_generalize(spec: StrategySpec) -> tuple:
     """STAGE-2 fluke-confirmation for BROAD-scope stage-1 passes: run the SAME frozen signal (default
     params, no re-search) on each PRE-DECLARED untouched universe, score ONLY the holdout window, and
@@ -220,14 +290,26 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     # LOCAL scope: confirmation is forward-validation (calendar time) -> stays candidate; the worker
     # auto-deploys it to shadow-paper so the forward track starts immediately.
     gen_results, gen_confirmed, gen_note = None, False, None
+    mcpt_res, mcpt_pass = None, None
     if stage1_pass:
+        # MCPT runs FIRST for every stage-1 pass (broad AND local): construction artifacts replicate
+        # across universes (breadth blind) and would auto-deploy as local candidates. Cheap vs the cost
+        # of a false PASS; early-stops on certain failure.
+        print("[stage2] stage-1 PASS -> running MCPT (permutation test) first...")
+        mcpt_res, mcpt_pass = _stage2_mcpt(spec, panel, _sharpe(full_ret))
         if getattr(spec, "scope", "broad") == "broad":
-            print("[stage2] stage-1 PASS on broad scope -> running cross-universe generalization battery...")
-            gen_results, gen_confirmed, gen_note = _stage2_generalize(spec)
-            print(f"[stage2] {gen_note}")
+            if mcpt_pass:
+                print("[stage2] MCPT pass -> running cross-universe generalization battery...")
+                gen_results, gen_confirmed, gen_note = _stage2_generalize(spec)
+                print(f"[stage2] {gen_note}")
+            else:
+                gen_note = "stage-2 REJECTED at MCPT: edge reproduces on permuted (structureless) data -> construction artifact, breadth skipped"
+                print(f"[stage2] {gen_note}")
         else:
-            gen_note = "local scope -> confirmation = forward-validation (auto-deploying to shadow paper)"
-    passed_all = bool(stage1_pass and gen_confirmed)
+            gen_note = ("local scope -> confirmation = forward-validation (auto-deploying to shadow paper)"
+                        if mcpt_pass else
+                        "local scope but MCPT FAIL -> construction artifact, NOT deploying to paper")
+    passed_all = bool(stage1_pass and mcpt_pass and gen_confirmed)
 
     verdict = {
         "id": spec.id, "family": spec.family, "title": spec.title, "markets": spec.markets,
@@ -242,6 +324,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "beta_to_universe": decomp.get("beta_to_universe"),
         "selection_alpha_sharpe": decomp.get("selection_alpha_sharpe"), "beta_confound": beta_confound,
         "stage1_pass": stage1_pass, "confirmed": gen_confirmed, "scope": getattr(spec, "scope", "broad"),
+        "mcpt": mcpt_res, "mcpt_pass": mcpt_pass,
         "needs_confirmation": (None if not stage1_pass or passed_all else
             ("cross-market-generalization" if getattr(spec, "scope", "broad") == "broad" else "forward-validation")),
         "generalization": gen_results, "generalization_note": gen_note,

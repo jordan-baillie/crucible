@@ -135,8 +135,11 @@ def run_one_from_queue():
     #   stage-1 pass with LOCAL scope                  -> Paper Book too: forward-validation IS its
     #     confirmation path, so the shadow track must start immediately (calendar time is the test).
     v = outcome.get("verdict") or {}
-    deploy = outcome["passed_all"] or (isinstance(v, dict) and v.get("stage1_pass")
-                                       and v.get("scope") == "local")
+    # mcpt_pass None = MCPT not run (pre-MCPT verdicts / non-price panels treated as pass inside the
+    # harness); False = construction artifact -> NEVER deploy, even as a local candidate.
+    deploy = (outcome["passed_all"] or (isinstance(v, dict) and v.get("stage1_pass")
+                                        and v.get("scope") == "local")) \
+        and (not isinstance(v, dict) or v.get("mcpt_pass") is not False)
     if deploy:
         try:
             from live.deploy import deploy_to_paper
