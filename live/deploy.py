@@ -1,26 +1,39 @@
-"""hephaestus/live/deploy.py — bridge a forge PASS into the Atlas Paper Book.
+"""live/deploy.py — bridge a crucible PASS into a paper-trading execution host.
 
-Computes TODAY's target weights from a strategy's signal (the positions still held at the latest ledger date),
-writes them to the Atlas contract file (``/root/atlas/data/live/<name>/target.json``), and registers the strategy
-via Atlas's ``deploy_pass``. The Atlas daily loop then paper-trades it on live data. PASS -> paper is autonomous
-(no real capital; promotion to real capital stays human-gated — board 2026-06-09).
+DEPLOY CONTRACT (what a target directory must provide — Atlas is the reference implementation):
+  1. ``<target>/data/live/<name>/target.json``   — we WRITE today's target weights here
+  2. ``<target>/live/providers.py::deploy_pass(name, *, capital, broker, expectation, strategy_path)``
+     — we CALL this to register the strategy with the host's daily paper loop
+  3. ``<target>/config/live_strategies.json``    — we READ the registry for refresh_all()
+Set CRUCIBLE_DEPLOY to point at any host implementing this contract, or "" to disable deployment
+(verdicts still record; nothing is paper-traded).
 
-The weight extraction is GENERIC: every forge strategy emits the same entry/exit/position_value trade ledger for
-the research-integrity rails, so "held at the latest date" recovers today's book without per-strategy code.
+Computes TODAY's target weights from a strategy's signal (the positions still held at the latest ledger
+date). PASS -> paper is autonomous (no real capital; promotion to real capital stays human-gated).
+
+The weight extraction is GENERIC: every crucible strategy emits the same entry/exit/position_value trade
+ledger for the research-integrity rails, so "held at the latest date" recovers today's book without
+per-strategy code.
 """
 from __future__ import annotations
 
 import datetime
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
 
 from crucible_paths import DEPLOY_TARGET as ATLAS
-ATLAS_LIVE = ATLAS / "data" / "live"
+ATLAS_LIVE = (ATLAS / "data" / "live") if ATLAS else None
 HEPH = Path(__file__).resolve().parents[1]
+
+
+def _require_target():
+    if ATLAS is None:
+        raise RuntimeError("CRUCIBLE_DEPLOY is unset/empty — paper deployment disabled (verdicts unaffected)")
 
 
 def extract_target_weights(trades: list) -> dict:
@@ -75,6 +88,7 @@ def compute_expectation(net, holdout_start: str = "2022-01-01") -> dict:
 
 
 def write_target(name: str, weights: dict, strategy_path: str) -> Path:
+    _require_target()
     d = ATLAS_LIVE / name
     d.mkdir(parents=True, exist_ok=True)
     f = d / "target.json"
@@ -83,7 +97,9 @@ def write_target(name: str, weights: dict, strategy_path: str) -> Path:
     return f
 
 
-def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: float = 100000.0) -> dict:
+def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: float = 100000.0,
+                    broker: str = os.environ.get("CRUCIBLE_BROKER", "alpaca")) -> dict:
+    _require_target()
     spec = _load_spec(strategy_path)
     name = name or spec.id.replace("-", "_")
     net, trades = _run_signal(spec)
@@ -93,14 +109,15 @@ def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: 
     subprocess.run(
         [sys.executable, "-c",
          f"import sys; sys.path.insert(0, {str(ATLAS)!r}); from live.providers import deploy_pass; "
-         f"deploy_pass({name!r}, capital={capital}, broker='alpaca', expectation={exp!r}, strategy_path={strategy_path!r})"],
+         f"deploy_pass({name!r}, capital={capital}, broker={broker!r}, expectation={exp!r}, strategy_path={strategy_path!r})"],
         cwd=str(ATLAS), check=False,
     )
     return {"name": name, "n_positions": len(weights), "expectation": exp, "weights": weights}
 
 
 def refresh_all() -> list:
-    """Recompute target.json for every deployed paper strategy (read from the Atlas registry)."""
+    """Recompute target.json for every deployed paper strategy (read from the host registry)."""
+    _require_target()
     out, reg_f = [], ATLAS / "config" / "live_strategies.json"
     reg = json.loads(reg_f.read_text()) if reg_f.exists() else []
     for s in reg:

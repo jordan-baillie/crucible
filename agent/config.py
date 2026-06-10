@@ -4,7 +4,7 @@ import os
 
 
 def _policy_model(tier: str = "frontier", failsafe: str = "claude-opus-4-8") -> str:
-    """Read the central model policy (/root/.pi/model-policy.json). Failsafe = $0-Max model."""
+    """Read the central model policy (MODEL_POLICY path). Failsafe = a safe default model."""
     try:
         import crucible_paths
         with open(crucible_paths.MODEL_POLICY) as fh:
@@ -14,7 +14,7 @@ def _policy_model(tier: str = "frontier", failsafe: str = "claude-opus-4-8") -> 
 
 
 # The model every smith uses for propose / codegen / scout.
-# Resolution order: FORGE_MODEL env (per-run override) > central policy > $0-Max failsafe.
+# Resolution order: FORGE_MODEL env (per-run override) > central policy > failsafe.
 MODEL = os.environ.get("FORGE_MODEL") or _policy_model()
 SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 

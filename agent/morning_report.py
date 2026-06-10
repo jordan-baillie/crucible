@@ -19,10 +19,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sdk.notify import telegram_msg
 
-from crucible_paths import ROOT, WIKI, DATA  # central config
+from crucible_paths import ROOT, WIKI, DEPLOY_TARGET  # central config
 RUNLOG = ROOT / "agent" / "run_log.jsonl"
-ATLAS_LIVE = DATA / "live"
-REGISTRY = DATA.parent / "config" / "live_strategies.json"
+ATLAS_LIVE = (DEPLOY_TARGET / "data" / "live") if DEPLOY_TARGET else None
+REGISTRY = (DEPLOY_TARGET / "config" / "live_strategies.json") if DEPLOY_TARGET else None
 BAB_LEDGER = ROOT / "forward" / "bab_ledger.jsonl"
 
 
@@ -89,7 +89,7 @@ def forge_section() -> list:
 def forward_paper_section() -> list:
     """ALL deployed paper-book strategies (virtual sub-books) + portfolio rollup. Scales with N."""
     try:
-        reg = json.loads(REGISTRY.read_text()) if REGISTRY.exists() else []
+        reg = json.loads(REGISTRY.read_text()) if (REGISTRY and REGISTRY.exists()) else []
     except Exception:
         reg = []
     if not reg:

@@ -1,7 +1,7 @@
 """Scout: the 'ingest external sources' step. Searches the web for NEW edges/strategies based on
 wiki gaps, distills findings into the wiki, and queues testable candidates for the propose step.
 This makes generation OPEN (discovers what others run) instead of only recombining what we know.
-Pattern: karpathy LLM-Wiki 'ingest' + a research scout. Claude Max OAuth ($0) + brave-search."""
+Pattern: karpathy LLM-Wiki 'ingest' + a research scout. LLM via the pi CLI + brave-search."""
 import json, subprocess
 from datetime import date
 from pathlib import Path

@@ -1,5 +1,5 @@
 """Tested data adapters the agent's generated signal code composes (reliability > reinvention).
-All FREE / already-owned sources. The agent is told to use THESE, not raw downloads."""
+All no-incremental-cost / already-owned sources. The agent is told to use THESE, not raw downloads."""
 import json, os, sys, warnings
 warnings.filterwarnings("ignore")
 import numpy as np, pandas as pd

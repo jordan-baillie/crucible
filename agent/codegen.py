@@ -1,5 +1,5 @@
 """Signal codegen: the agent writes a complete StrategySpec module from its proposal,
-with a bounded fix-retry loop (reads the traceback, repairs the code). Claude Max OAuth ($0)."""
+with a bounded fix-retry loop (reads the traceback, repairs the code). LLM via the pi CLI."""
 import json, re, subprocess
 from agent.propose import _assistant_text
 from agent.config import pi_cmd

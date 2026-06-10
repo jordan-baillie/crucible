@@ -68,7 +68,7 @@ def llm_context(query, count=10):
 
 def rich_search_text(query, count=18):
     """The scout's research call — fully exploits the upgraded SEARCH plan: count=20, extra_snippets
-    (~5x content), freshness=py (recent), + recent news. The scout (Claude Max) distills it, grounded
+    (~5x content), freshness=py (recent), + recent news. The scout LLM distills it, grounded
     in our wiki/discipline. (Optional Brave summarizer auto-used only if BRAVE_AI_KEY is set.)"""
     ctx = llm_context(query)
     if ctx:

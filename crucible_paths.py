@@ -15,7 +15,10 @@ ROOT = Path(os.environ.get("CRUCIBLE_ROOT", Path(__file__).resolve().parent))
 WIKI = Path(os.environ.get("CRUCIBLE_WIKI", "/root/research-wiki"))
 DATA = Path(os.environ.get("CRUCIBLE_DATA", "/root/atlas/data"))
 SECRETS = Path(os.environ.get("CRUCIBLE_SECRETS", os.path.expanduser("~/.atlas-secrets.json")))
-DEPLOY_TARGET = Path(os.environ.get("CRUCIBLE_DEPLOY", "/root/atlas"))
+# Paper-deploy target: a directory implementing the deploy contract (see live/deploy.py docstring).
+# Set CRUCIBLE_DEPLOY="" (empty) to disable deployment entirely — verdicts still record normally.
+_deploy = os.environ.get("CRUCIBLE_DEPLOY", "/root/atlas")
+DEPLOY_TARGET = Path(_deploy) if _deploy else None
 MODEL_POLICY = Path(os.environ.get("MODEL_POLICY", "/root/.pi/model-policy.json"))
 
 STRATEGIES = ROOT / "strategies"

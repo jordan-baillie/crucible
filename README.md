@@ -1,7 +1,7 @@
 # Crucible
 
-**Industrialized autonomous strategy research.** LLM agents ("smiths") generate trading-strategy
-hypotheses for ~$0; the value is the **crucible** — a non-bypassable gate stack that burns away
+**Industrialized autonomous strategy research.** LLM agents ("smiths") make hypothesis generation
+cheap and unlimited; the value is the **crucible** — a non-bypassable gate stack that burns away
 everything that isn't a real, harvestable premium. 39 cycles in, the system has correctly produced
 **zero false PASSes**: every near-miss was killed by a later gate for a documented, distinct reason.
 
@@ -60,13 +60,21 @@ All external paths resolve through `crucible_paths.py`, env-overridable:
 | `CRUCIBLE_DATA` | `/root/atlas/data` | market data root (`sharadar/`, `cache/`, `live/`) |
 | `CRUCIBLE_SECRETS` | `~/.atlas-secrets.json` | JSON: `telegram_bot_token`, `telegram_chat_id`, `fred_api_key` |
 | `CRUCIBLE_DEPLOY` | `/root/atlas` | paper-deploy target (Atlas-style `live/providers.deploy_pass`) |
-| `MODEL_POLICY` | `/root/.pi/model-policy.json` | central model policy (tiers + effort levels) |
+| `MODEL_POLICY` | `/root/.pi/model-policy.json` | optional central model policy (tiers + effort levels); absent → failsafe model |
 | `FORGE_MODEL` / `FORGE_THINKING` | policy / pi default | per-run LLM model + effort (`low`…`xhigh`, `max`, `ultracode`) |
 | `FRED_API_KEY` | from secrets file | FRED adapter override |
-| `BOREAS_RESEARCH` | `/root/boreas/research` | validated TSMOM hedge-leg source (`trend_returns` adapter) |
+| `BOREAS_RESEARCH` | `/root/boreas/research` | optional validated TSMOM hedge-leg source (`trend_returns` adapter) |
 
-LLM calls go through the `pi` CLI (Claude Max OAuth, $0 marginal). **Every subprocess call must
-carry `--system-prompt`** — see `agent/config.py::pi_cmd()` for the canonical invocation.
+### LLM backend
+
+All LLM calls go through the [`pi` CLI](https://github.com/getpi/pi) as a subprocess —
+`agent/config.py::pi_cmd()` is the single canonical invocation. **How you pay for Claude is your
+choice**: an API key, a subscription plan (e.g. Claude Max OAuth), or a gateway — whatever your
+`pi` install is authenticated with. Pick models per-run via `FORGE_MODEL`, or centrally via a
+`MODEL_POLICY` JSON (`{"tiers": {"frontier": "<model-id>", ...}}`).
+
+Note for subscription-OAuth setups: some billing routers key off the presence of a system prompt —
+`pi_cmd()` always sends one, which is also simply correct practice for reproducible generation calls.
 
 ## Running
 
@@ -79,6 +87,24 @@ python3 agent/digest.py                       # Telegram digest
 # nightly autonomy (3 smiths, 03:30): see systemd/crucible-forge.{service,timer}
 touch LOOP_DISABLED                           # KILLSWITCH — halts the loop (checked first)
 ```
+
+## Execution-host integration (Atlas reference)
+
+Crucible researches; an execution host paper-trades. The seam is a small contract, implemented by
+[Atlas](https://github.com/jordan-245/atlas) and pluggable via `CRUCIBLE_DEPLOY` (empty = research-only mode,
+verdicts still record):
+
+| Direction | Interface | Used by |
+|---|---|---|
+| crucible → host | `<host>/data/live/<name>/target.json` (target weights, written daily) | `live/deploy.py` |
+| crucible → host | `<host>/live/providers.py::deploy_pass(name, capital, broker, expectation, strategy_path)` | `live/deploy.py` (PASS / local-candidate registration) |
+| crucible ← host | `<host>/config/live_strategies.json` (deploy registry) | `live/deploy.py::refresh_all`, morning report |
+| crucible ← host | `<host>/data/live/<name>/{book.json,returns.jsonl}` (paper books + realized returns) | morning report rollup |
+| host ← crucible | `agent/run_log.jsonl`, `LOOP_DISABLED`, forge timer state (read-only) | Atlas dashboard Forge tab |
+
+The host owns execution truth (brokers, fills, virtual books); crucible owns research truth
+(verdicts, the wiki, the FDR registry). Neither writes the other's state — the registry and
+`deploy_pass` are the only mutation points, both host-side.
 
 ## Safety invariants
 

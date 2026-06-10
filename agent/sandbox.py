@@ -1,4 +1,4 @@
-"""Sandbox for agent-generated signal code (D2: AST denylist + rlimits — pragmatic, $0).
+"""Sandbox for agent-generated signal code (D2: AST denylist + rlimits — pragmatic, dependency-free).
 
 The harness (trusted) owns ALL I/O — registry/wiki/telegram writes and the rails. The agent's
 generated module must be pure compute over a data panel; data is fetched by sdk.adapters (which

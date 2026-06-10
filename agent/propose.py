@@ -1,4 +1,4 @@
-"""Generation step: read the shared wiki, propose ONE new untested hypothesis (Claude Max OAuth, $0).
+"""Generation step: read the shared wiki, propose ONE new untested hypothesis (LLM via the pi CLI).
 Grounded in accumulated knowledge so it never re-tests closed sets or duplicates experiments."""
 import json, subprocess
 from pathlib import Path
