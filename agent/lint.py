@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-WIKI = Path("/root/research-wiki")
+from crucible_paths import WIKI  # central config
 LOG_KEEP = 60  # keep the most recent N log entries; archive the rest
 
 
@@ -50,7 +50,7 @@ def archive_strategies(days: int = 30):
     """Move strategy modules older than N days into strategies/archive/ (the run record lives in
     run_log.jsonl + the wiki; old generated modules are only needed for forensics)."""
     import time
-    sdir = Path("/root/hephaestus/strategies")
+    from crucible_paths import STRATEGIES as sdir
     adir = sdir / "archive"
     cutoff = time.time() - days * 86400
     moved = 0
@@ -67,7 +67,7 @@ def archive_strategies(days: int = 30):
 def prune_forge_logs(days: int = 30):
     """Delete dated forge logs older than N days (logs/forge-YYYY-MM-DD.log)."""
     import time
-    ldir = Path("/root/hephaestus/logs")
+    from crucible_paths import LOGS as ldir
     if not ldir.exists():
         return 0
     cutoff = time.time() - days * 86400

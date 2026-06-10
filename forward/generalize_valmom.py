@@ -9,7 +9,7 @@ Runs the candidate's exact signal on Large + Small cap universes. Reports every 
 import importlib
 import sys
 
-sys.path.insert(0, "/root/hephaestus")
+sys.path.insert(0, "/root/crucible")
 import numpy as np
 import pandas as pd
 from sdk.adapters import sep_panel, sf1, us_universe

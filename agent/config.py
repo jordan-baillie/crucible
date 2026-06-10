@@ -6,7 +6,8 @@ import os
 def _policy_model(tier: str = "frontier", failsafe: str = "claude-opus-4-8") -> str:
     """Read the central model policy (/root/.pi/model-policy.json). Failsafe = $0-Max model."""
     try:
-        with open("/root/.pi/model-policy.json") as fh:
+        import crucible_paths
+        with open(crucible_paths.MODEL_POLICY) as fh:
             return json.load(fh)["tiers"][tier]
     except Exception:
         return failsafe
@@ -17,10 +18,11 @@ def _policy_model(tier: str = "frontier", failsafe: str = "claude-opus-4-8") -> 
 MODEL = os.environ.get("FORGE_MODEL") or _policy_model()
 SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 
-# Optional extended-thinking level for forge LLM calls (FORGE_THINKING env).
-# Accepts pi's native levels (off/minimal/low/medium/high/xhigh) plus the
-# 'ultracode'/'ultrathink' alias = maximum reasoning (xhigh). Unset = pi default.
-_THINKING_ALIASES = {"ultracode": "xhigh", "ultrathink": "xhigh"}
+# Optional effort level for forge LLM calls (FORGE_THINKING env).
+# Accepts the Anthropic API effort vocabulary (low/medium/high/xhigh/max) plus pi's native
+# levels (off/minimal) and the 'ultracode'/'ultrathink' aliases. 'max' maps to xhigh — pi's
+# ceiling — until pi exposes the API's max tier. Unset = pi default.
+_THINKING_ALIASES = {"ultracode": "xhigh", "ultrathink": "xhigh", "max": "xhigh"}
 _VALID_THINKING = {"off", "minimal", "low", "medium", "high", "xhigh"}
 
 

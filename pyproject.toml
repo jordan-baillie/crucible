@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crucible"
+version = "1.0.0"
+description = "Crucible — industrialized autonomous strategy research. LLM smiths generate hypotheses cheaply; the gate stack (CPCV/DSR/PBO + FDR bar + write-once holdout + beta-confound + MCPT + breadth) burns away everything that isn't real. Telegram only on full-gate PASS; capital is always human-gated."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "research_integrity",  # the rails: pip install -e from shared/research_integrity (vendored or sibling repo)
+]
+
+[project.optional-dependencies]
+data = ["yfinance"]  # yf_panel adapter; Sharadar/FRED need no extra packages
+
+[tool.setuptools]
+packages = ["agent", "sdk", "live", "forward", "strategies"]
+py-modules = ["crucible_paths"]

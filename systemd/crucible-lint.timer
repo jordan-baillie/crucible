@@ -1,0 +1,7 @@
+[Unit]
+Description=Weekly Crucible wiki lint (Sundays 04:30)
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+Persistent=true
+[Install]
+WantedBy=timers.target

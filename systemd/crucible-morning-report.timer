@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily 07:00 AEST morning report (after the 03:30 forge night + 23:45 forward-paper run)
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

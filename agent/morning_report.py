@@ -16,14 +16,13 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-sys.path.insert(0, "/root/hephaestus")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sdk.notify import telegram_msg
 
-ROOT = Path("/root/hephaestus")
-WIKI = Path("/root/research-wiki")
+from crucible_paths import ROOT, WIKI, DATA  # central config
 RUNLOG = ROOT / "agent" / "run_log.jsonl"
-ATLAS_LIVE = Path("/root/atlas/data/live")
-REGISTRY = Path("/root/atlas/config/live_strategies.json")
+ATLAS_LIVE = DATA / "live"
+REGISTRY = DATA.parent / "config" / "live_strategies.json"
 BAB_LEDGER = ROOT / "forward" / "bab_ledger.jsonl"
 
 

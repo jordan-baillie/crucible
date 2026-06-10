@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-ATLAS = Path("/root/atlas")
+from crucible_paths import DEPLOY_TARGET as ATLAS
 ATLAS_LIVE = ATLAS / "data" / "live"
 HEPH = Path(__file__).resolve().parents[1]
 
@@ -92,7 +92,7 @@ def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: 
     write_target(name, weights, strategy_path)
     subprocess.run(
         [sys.executable, "-c",
-         "import sys; sys.path.insert(0, '/root/atlas'); from live.providers import deploy_pass; "
+         f"import sys; sys.path.insert(0, {str(ATLAS)!r}); from live.providers import deploy_pass; "
          f"deploy_pass({name!r}, capital={capital}, broker='alpaca', expectation={exp!r}, strategy_path={strategy_path!r})"],
         cwd=str(ATLAS), check=False,
     )

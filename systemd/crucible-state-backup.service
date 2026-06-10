@@ -1,0 +1,8 @@
+[Unit]
+Description=Nightly backup of research state (wiki + FDR registry + run_log + elite pool + forward ledgers + live data)
+
+[Service]
+Type=oneshot
+# State (not code — code is in git): the wiki IS the research memory; registry/run_log/elite are the
+# forge's accumulated evidence; live/ has the forward-paper track record. 14 dated tarballs kept.
+ExecStart=/bin/bash -c 'set -e; D=/root/backups/research-state; mkdir -p $D; tar czf $D/state-$(date +%%Y-%%m-%%d).tar.gz /root/research-wiki /root/crucible/agent/run_log.jsonl /root/crucible/forward/bab_ledger.jsonl /root/atlas/data/live 2>/dev/null; ls -t $D/state-*.tar.gz | tail -n +15 | xargs -r rm'

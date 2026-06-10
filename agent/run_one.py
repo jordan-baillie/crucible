@@ -4,8 +4,7 @@ import json, re, subprocess, sys, time
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path("/root/hephaestus")
-WIKI = Path("/root/research-wiki")
+from crucible_paths import ROOT, WIKI  # central config
 sys.path.insert(0, str(ROOT))
 from agent.propose import propose
 from agent.scout import scout

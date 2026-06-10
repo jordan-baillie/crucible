@@ -11,9 +11,8 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path("/root/hephaestus")
+from crucible_paths import ROOT, WIKI  # central config
 sys.path.insert(0, str(ROOT))
-WIKI = Path("/root/research-wiki")
 
 from agent.propose import propose, mutate as propose_mutate
 from agent.scout import scout

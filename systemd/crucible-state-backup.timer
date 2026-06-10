@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly 06:30 research-state backup (after the forge night, before the morning report)
+
+[Timer]
+OnCalendar=*-*-* 06:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

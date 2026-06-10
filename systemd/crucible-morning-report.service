@@ -1,0 +1,8 @@
+[Unit]
+Description=Crucible unified morning report (forge night + forward threads + ops) via Telegram
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/crucible
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 -m agent.morning_report

@@ -17,7 +17,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path("/root/hephaestus")
+from crucible_paths import ROOT, WIKI  # central config
 sys.path.insert(0, str(ROOT))
 
 from agent import codegen

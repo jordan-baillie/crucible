@@ -1,9 +1,9 @@
 """Daily Telegram digest: summarize recent autonomous cycles (what was tested + verdicts)."""
 import json, sys
 from pathlib import Path
-sys.path.insert(0, "/root/hephaestus")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from sdk.notify import telegram_msg
-ROOT = Path("/root/hephaestus")
+from crucible_paths import ROOT, WIKI  # central config
 
 def digest(n=5):
     rl = ROOT / "agent" / "run_log.jsonl"

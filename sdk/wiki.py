@@ -2,7 +2,7 @@
 from datetime import date
 from pathlib import Path
 
-WIKI = Path("/root/research-wiki")
+from crucible_paths import WIKI  # central config
 
 
 def write_experiment(spec, verdict: dict):

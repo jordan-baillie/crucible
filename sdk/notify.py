@@ -3,7 +3,8 @@ import json, os, urllib.parse, urllib.request
 
 
 def _creds():
-    s = json.load(open(os.path.expanduser("~/.atlas-secrets.json")))
+    from crucible_paths import SECRETS
+    s = json.load(open(SECRETS))
     return s.get("telegram_bot_token"), s.get("telegram_chat_id")
 
 

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from sdk.locks import FileLock
 
-QUEUE = Path(os.environ.get("HEPH_QUEUE", "/root/research-wiki/.queue/queue.jsonl"))
+from crucible_paths import QUEUE  # env-overridable via HEPH_QUEUE
 CLAIM_TTL = 3600  # reclaim a claimed-but-unfinished item after 1h (worker presumed dead)
 
 

@@ -9,7 +9,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path("/root/hephaestus")
+ROOT = Path("/root/crucible")
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "forward"))
 

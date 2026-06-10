@@ -4,8 +4,8 @@ re-discovered each night. Succinct by design: one jsonl, fitness=DSR, fitness-we
 import json
 from pathlib import Path
 
-POOL = Path("/root/research-wiki/.elite/pool.jsonl")
-CLOSED_FAMILIES = Path("/root/research-wiki/decisions/closed-families.txt")
+from crucible_paths import ELITE as POOL, WIKI
+CLOSED_FAMILIES = WIKI / "decisions" / "closed-families.txt"
 K = 12          # pool size
 MIN_FIT = 0.5   # only genuinely promising runs enter (DSR > 0.5)
 

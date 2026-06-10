@@ -20,7 +20,7 @@ import json
 import sys
 from datetime import datetime
 
-sys.path.insert(0, "/root/hephaestus")
+sys.path.insert(0, "/root/crucible")
 import numpy as np
 import pandas as pd
 
@@ -159,7 +159,7 @@ def main():
     rec = {"ts": datetime.now().isoformat(), "holdout": HOLDOUT,
            "method": "per-tier ri.assemble_bundle CPCV/PBO/DSR + OOS Sharpe (rails-faithful)",
            "results": out}
-    with open("/root/hephaestus/forward/valmom_generalization_cpcv.jsonl", "a") as f:
+    with open("/root/crucible/forward/valmom_generalization_cpcv.jsonl", "a") as f:
         f.write(json.dumps(rec) + "\n")
     print("\n=== FULL JSON ===")
     print(json.dumps(rec, indent=2))

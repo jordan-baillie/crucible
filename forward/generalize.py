@@ -8,8 +8,8 @@ Usage: adapt `UNIVERSES` to the candidate, run, read the breadth verdict. ALWAYS
 real mechanism shows broad (even if weak) OOS positivity; an overfit one shows ONE lucky universe + negatives.
 """
 import sys
-sys.path.insert(0, "/root/hephaestus")
-sys.path.insert(0, "/root/hephaestus/forward")
+sys.path.insert(0, "/root/crucible")
+sys.path.insert(0, "/root/crucible/forward")
 import numpy as np
 import pandas as pd
 from sdk.adapters import yf_panel

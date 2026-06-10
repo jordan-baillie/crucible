@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+logs/
+*.log
+scratch/
+
+# Runtime state (regenerated nightly; backed up by crucible-state-backup)
+agent/run_log.jsonl
+forward/*_results.json
+forward/*_ledger.jsonl
+forward/*.jsonl

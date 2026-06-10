@@ -20,7 +20,7 @@ import os
 import sys
 import time
 
-sys.path.insert(0, "/root/hephaestus")
+sys.path.insert(0, "/root/crucible")
 import pandas as pd
 
 from sdk.harness import _stage2_mcpt, _sharpe
@@ -33,7 +33,7 @@ TARGETS = [
     ("strategies.auto_value_momentum_complementary_combination_smith3_26200", False, 0.96),  # value_momentum_complementary_xs_v1
     ("strategies.auto_variant_cost_fragility_hardened_low_turn_smith1_28149", False, 30.18), # value_bm_smallcap_lowturn (ran last: panel OOM'd once)
 ]
-OUT = "/root/hephaestus/forward/mcpt_sweep_results.json"
+OUT = "/root/crucible/forward/mcpt_sweep_results.json"
 
 
 def main():

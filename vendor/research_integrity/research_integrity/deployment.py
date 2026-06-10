@@ -1,0 +1,185 @@
+"""Rail 3 — Deployment-sanity (SHARED research-integrity infra).
+
+PROJECT-AGNOSTIC: deployment_sanity/expected_positions are pure. `deployment_smoke` is the ATLAS
+reference runner. For non-equity projects (e.g. Hermes betting) define your own thresholds/analog
+(bets/day, game spread, single-game share) or call deployment_sanity on bet-trade dicts. Original:
+
+A cross-OOS battery TIER is meaningless unless the strategy actually trades the book it was
+designed for. 2026-06-05: cross_sectional_momentum "PROMOTEd" (DSR 0.926) while a sector-tag bug
+capped it to 2 concurrent positions; the "edge" lived in the top 1-2 names. Properly deployed (~14)
+it FAILED. A human caught it; at 1000 runs/day no human will. This module auto-FAILs such artifacts.
+
+Spec: research/INTEGRITY_RAILS_SPEC.md (Rail 3). Lesson: tasks/lessons.md 2026-06-05.
+Thresholds are PRE-REGISTERED and FROZEN here.
+"""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+
+# ── Pre-registered, frozen thresholds ────────────────────────────────────────
+MIN_TRADES = 50                 # fewer => degenerate / luck, not a strategy
+MIN_PEAK_FRAC_OF_DESIGN = 0.25  # peak concurrency must be >= 25% of the intended book size
+MIN_PEAK_ABS = 3                # ...and at least 3 names absolute
+MAX_SINGLE_NAME_SHARE = 0.40    # max fraction of dollar-position-days in one ticker
+MIN_REALIZED_VS_DESIGN = 0.50   # peak_concurrent / expected_positions
+DEFAULT_N_SECTORS = 11          # GICS-style sector count for the design-intent calc
+
+
+def _sector_of(t: Dict[str, Any]) -> str:
+    s = t.get("sector")
+    if not s:
+        s = (t.get("features") or {}).get("sector")
+    return s or "Unknown"
+
+
+def expected_positions(primary_config: Optional[dict], strategy_meta: Optional[dict]) -> int:
+    """Design-intent book size = min(top_n or max_positions, sector_cap x n_sectors)."""
+    pc = primary_config or {}
+    sm = strategy_meta or {}
+    max_pos = int(sm.get("max_positions") or 0) or None
+    top_n = pc.get("top_n") if isinstance(pc, dict) else None
+    top_n = int(top_n) if top_n else None
+    sector_cap = int(sm.get("max_sector_concentration") or 0) or None
+    n_sectors = int(sm.get("n_sectors") or DEFAULT_N_SECTORS)
+    cand = [x for x in (top_n, max_pos) if x]
+    base = min(cand) if cand else (max_pos or 10)
+    if sector_cap:
+        base = min(base, sector_cap * n_sectors)
+    return max(1, int(base))
+
+
+def deployment_sanity(trades: List[Dict[str, Any]],
+                      primary_config: Optional[dict] = None,
+                      strategy_meta: Optional[dict] = None) -> Dict[str, Any]:
+    """Compute deployment metrics + auto-FAIL gates from a closed-trade list.
+
+    Returns a dict with metrics, `passed` (bool), and `forced_fail_reasons` (list[str]).
+    A False `passed` should force the battery TIER to FAIL regardless of DSR.
+    """
+    primary_config = primary_config or {}
+    strategy_meta = strategy_meta or {}
+    n = len(trades)
+    out: Dict[str, Any] = {"n_trades": n, "passed": True, "forced_fail_reasons": []}
+    if n == 0:
+        out["passed"] = False
+        out["forced_fail_reasons"].append("no trades")
+        return out
+
+    ev: List[tuple] = []
+    pos_days_by_ticker: Dict[str, float] = {}
+    pos_days_by_sector: Dict[str, float] = {}
+    total_pos_days = 0.0
+    hold_days: List[float] = []
+    entry_dts: List[pd.Timestamp] = []
+    exit_dts: List[pd.Timestamp] = []
+    for t in trades:
+        e, x = t.get("entry_date"), t.get("exit_date")
+        if e is None or x is None:
+            continue
+        e, x = pd.Timestamp(e), pd.Timestamp(x)
+        entry_dts.append(e); exit_dts.append(x)
+        ev.append((e, 1)); ev.append((x, -1))   # (ts,-1) sorts before (ts,+1): exits first, no overcount
+        hd = t.get("hold_days")
+        hd = float(hd) if hd is not None else float(max(0, (x - e).days))
+        hd += 1e-9
+        pv = float(t.get("position_value") or 0.0) or 1.0   # dollar weight; equal-weight fallback
+        w = hd * pv
+        tk = t.get("ticker", "?")
+        sec = _sector_of(t)
+        pos_days_by_ticker[tk] = pos_days_by_ticker.get(tk, 0.0) + w
+        pos_days_by_sector[sec] = pos_days_by_sector.get(sec, 0.0) + w
+        total_pos_days += w
+        hold_days.append(hd)
+
+    ev.sort()
+    cur = peak = 0
+    conc_track: List[int] = []
+    for _, delta in ev:
+        cur += delta
+        peak = max(peak, cur)
+        conc_track.append(cur)
+    avg_conc = float(np.mean([c for c in conc_track if c > 0])) if conc_track else 0.0
+
+    years = 1.0
+    if entry_dts and exit_dts:
+        span = (max(exit_dts) - min(entry_dts)).days
+        years = max(span / 365.25, 1e-6)
+
+    exp = expected_positions(primary_config, strategy_meta)
+    realized_vs_design = peak / exp if exp else 0.0
+    single_name_share = (max(pos_days_by_ticker.values()) / total_pos_days) if total_pos_days > 0 else 1.0
+    max_sector_share = (max(pos_days_by_sector.values()) / total_pos_days) if total_pos_days > 0 else 1.0
+
+    out.update({
+        "peak_concurrent": peak,
+        "avg_concurrent": round(avg_conc, 2),
+        "trades_per_year": round(n / years, 1),
+        "expected_positions": exp,
+        "realized_vs_design": round(realized_vs_design, 3),
+        "sector_spread": len(pos_days_by_sector),
+        "max_sector_share": round(max_sector_share, 3),
+        "single_name_share": round(single_name_share, 3),
+        "median_hold_days": round(float(np.median(hold_days)), 1) if hold_days else None,
+    })
+
+    reasons: List[str] = out["forced_fail_reasons"]
+    if n < MIN_TRADES:
+        reasons.append(f"n_trades {n} < {MIN_TRADES}")
+    peak_floor = max(MIN_PEAK_ABS, MIN_PEAK_FRAC_OF_DESIGN * exp)
+    if peak < peak_floor:
+        reasons.append(
+            f"peak_concurrent {peak} < floor {peak_floor:.1f} "
+            f"(expected {exp}) — not deploying as designed")
+    if single_name_share > MAX_SINGLE_NAME_SHARE:
+        reasons.append(
+            f"single_name_share {single_name_share:.2f} > {MAX_SINGLE_NAME_SHARE} "
+            f"— accidental single-name concentration")
+    if realized_vs_design < MIN_REALIZED_VS_DESIGN:
+        reasons.append(
+            f"realized_vs_design {realized_vs_design:.2f} < {MIN_REALIZED_VS_DESIGN} "
+            f"— engine constraints throttling the book")
+    out["passed"] = len(reasons) == 0
+    return out
+
+
+def deployment_smoke(strategy: str, market: str = "sp500", max_positions: int = 35) -> Dict[str, Any]:
+    """Queue-hygiene gate: run the strategy's DEFAULT config ONCE and check deployment-sanity.
+
+    Used before a generated strategy earns a full battery slot — don't flood the queue with
+    degenerate / non-deploying strategies. (Rail 3 also catches these at screen time; this just
+    avoids spending a full battery run on junk.) Returns the deployment_sanity dict plus `ok`.
+    Lazy-imports the engine so this module's top level stays pure.
+    """
+    import sys
+    from pathlib import Path as _Path
+    proj = _Path(__file__).resolve().parents[2]
+    sys.path.insert(0, str(proj))
+    try:
+        import scripts.validate_oos as vo
+        from backtest.engine import BacktestEngine
+        from scripts.strategy_evaluator import STRATEGY_REGISTRY, load_sandbox_strategy
+        from utils.config import get_active_config
+        data = vo.load_data(market=market)
+        data = {k: v for k, v in data.items() if len(v) >= 260}
+        base = get_active_config(market)
+        base.setdefault("strategies", {})[strategy] = {"enabled": True}
+        base.setdefault("risk", {})["max_open_positions"] = max_positions
+        cls = STRATEGY_REGISTRY.get(strategy) or load_sandbox_strategy(strategy)
+        if cls is None:
+            return {"ok": False, "passed": False, "forced_fail_reasons": [f"strategy '{strategy}' not found"]}
+        res = BacktestEngine(base).run_walkforward(data, [cls(base)])
+        dep = deployment_sanity(res.trades, primary_config={},
+                                strategy_meta={"max_positions": max_positions,
+                                               "max_sector_concentration": base.get("risk", {}).get("max_sector_concentration", 2)})
+        dep["ok"] = dep["passed"]
+        return dep
+    except Exception as e:  # fail-open: never let a smoke error block generation
+        return {"ok": True, "passed": None, "smoke_error": str(e), "forced_fail_reasons": []}
+
+
+__all__ = ["deployment_sanity", "expected_positions", "deployment_smoke",
+           "MIN_TRADES", "MIN_PEAK_FRAC_OF_DESIGN", "MIN_PEAK_ABS",
+           "MAX_SINGLE_NAME_SHARE", "MIN_REALIZED_VS_DESIGN"]

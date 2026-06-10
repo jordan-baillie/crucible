@@ -14,10 +14,10 @@ import numpy as np
 import pandas as pd
 
 # rails (per-project FDR/holdout state lives in the research-wiki so it's SHARED across agents)
-os.environ.setdefault("RESEARCH_INTEGRITY_DIR", "/root/research-wiki/.registry")
+from crucible_paths import WIKI, REGISTRY
+os.environ.setdefault("RESEARCH_INTEGRITY_DIR", str(REGISTRY))
 import research_integrity as ri
 
-WIKI = Path("/root/research-wiki")
 SCREEN_FLOOR = 0.3   # tier-0: |search Sharpe| below this -> no in-sample edge -> skip grid+CPCV, keep holdout
 BETA_HI = 0.6        # long-only beta-to-universe above this + weak selection-alpha -> beta-confound
 SEL_FLOOR = 0.4      # selection-alpha Sharpe a high-beta strategy must clear to be a real edge (not just beta)

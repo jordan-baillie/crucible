@@ -38,7 +38,7 @@ CONTRACT:
 
 USE ONLY these tested imports (do NOT download raw / reinvent). Full data inventory: research-wiki/DATA_CATALOG.md.
   from sdk.harness import StrategySpec
-  from sdk.adapters import sep_panel, us_universe, sf1, yf_panel, fred_series, trend_returns, carry_returns, inv_vol_position
+  from sdk.adapters import sep_panel, us_universe, sf1, yf_panel, fred_series, trend_returns, inv_vol_position
   import numpy as np, pandas as pd
 - sep_panel(tickers, start, field='closeadj') -> SURVIVORSHIP-CLEAN US equity daily panel from OWNED Sharadar SEP
   (delisted incl, split+div adjusted). **PREFER over yf_panel for US stocks** (yfinance has survivorship bias).
@@ -54,7 +54,6 @@ USE ONLY these tested imports (do NOT download raw / reinvent). Full data invent
 - yf_panel(tickers, start) -> Close panel (FREE; futures/ETFs/intl indices — NOT US single stocks).
   fred_series({fred_id:col}, start) -> daily rates/yields/credit-spreads (FREE; e.g. BAMLH0A0HYM2=HY OAS).
 - trend_returns(**p) -> (returns, trades) the validated 21-market CTA trend hedge leg.
-- carry_returns() -> the crypto funding-carry near-miss leg (daily returns Series).
 - inv_vol_position(signal_df, rets, target_vol, vol_lb, max_pos, rebalance) -> weekly-held lagged positions.
 - For a COMBINATION: build each leg's daily returns, align (pd.concat axis=1 dropna), vol-match, blend.
 - BUT test the premium STANDALONE first. Only ADD a hedge (e.g. trend) if it CUTS THE TAIL without

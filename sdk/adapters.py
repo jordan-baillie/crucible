@@ -30,7 +30,8 @@ def yf_panel(tickers, start="2005-01-01") -> pd.DataFrame:
 def fred_series(series_ids, start="2005-01-01") -> pd.DataFrame:
     """Daily-ffilled FRED series panel. series_ids: dict {fred_id: column_name} or list."""
     import urllib.request
-    key = json.load(open(os.path.expanduser("~/.atlas-secrets.json")))["fred_api_key"]
+    from crucible_paths import SECRETS
+    key = os.environ.get("FRED_API_KEY") or json.load(open(SECRETS))["fred_api_key"]
     if isinstance(series_ids, (list, tuple)):
         series_ids = {s: s for s in series_ids}
     out = {}
@@ -46,26 +47,14 @@ def fred_series(series_ids, start="2005-01-01") -> pd.DataFrame:
 
 def trend_returns(**params):
     """The validated Boreas 21-market TSMOM stream (daily_returns, trades) — a ready hedge leg."""
-    sys.path.insert(0, "/root/boreas/research")
+    sys.path.insert(0, os.environ.get("BOREAS_RESEARCH", "/root/boreas/research"))
     from tsmom import run_tsmom
     return run_tsmom(**params)
 
 
-def carry_returns(**params):
-    """The Midas crypto funding-carry leg return stream (the near-miss carry leg)."""
-    sys.path.insert(0, "/root/midas/research/perp_validation/xs_funding_carry")
-    import load_binance_vision as bv, run_xs_funding_validation as v
-    F, R, Q, listing = bv.build_panel(min_days=40)
-    names = [s for s in R.columns if s in listing]
-    btc = R["BTCUSDT"] if "BTCUSDT" in R else pd.Series(0.0, index=R.index)
-    bt = v.backtest(F, R, Q, listing, v.COST_BPS, names, btc)
-    s = bt["net"].copy(); s.index = pd.to_datetime(s.index)
-    try: s.index = s.index.tz_localize(None)
-    except Exception: s.index = s.index.tz_convert(None)
-    if hasattr(s.index, "normalize"):
-        s.index = s.index.normalize()
-    return s
-
+# carry_returns() removed 2026-06-10: Midas project killed, its data pipeline is gone.
+# The carry+trend STRUCTURE remains validated knowledge (see wiki) — re-add only with a
+# new carry leg + fresh forward validation.
 
 def inv_vol_position(signal_df, rets, target_vol=0.10, vol_lb=60, max_pos=2.0, rebalance="W-FRI"):
     """Standard inverse-vol sizing + weekly hold + 1d lag (no look-ahead). Reusable building block."""
@@ -75,8 +64,9 @@ def inv_vol_position(signal_df, rets, target_vol=0.10, vol_lb=60, max_pos=2.0, r
 
 
 # ── Owned Sharadar — SURVIVORSHIP-CLEAN US equities (PREFER over yf_panel for US stocks) ──
-SHARADAR_DIR = "/root/atlas/data/sharadar"
-_CACHE_DIR = "/root/atlas/data/cache"
+from crucible_paths import DATA
+SHARADAR_DIR = str(DATA / "sharadar")
+_CACHE_DIR = str(DATA / "cache")
 
 
 def _sep_cache() -> str:

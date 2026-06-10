@@ -8,7 +8,7 @@ from pathlib import Path
 from agent.propose import _assistant_text
 from agent.config import MODEL
 
-WIKI = Path("/root/research-wiki")
+from crucible_paths import WIKI  # central config
 BRAVE = "/root/.pi/agent/skills/pi-skills/brave-search/search.js"
 SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 

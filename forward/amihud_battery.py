@@ -21,14 +21,14 @@ import json
 import sys
 import time
 
-sys.path.insert(0, "/root/hephaestus")
+sys.path.insert(0, "/root/crucible")
 import numpy as np
 import pandas as pd
 
 MOD = "strategies.auto_amihud_illiquidity_risk_premium_in_survi_smith2_99439"
 HOLDOUT = "2022-01-01"
 N_PERMS = 50
-OUT = "/root/hephaestus/forward/amihud_battery_results.json"
+OUT = "/root/crucible/forward/amihud_battery_results.json"
 
 
 def sharpe(r, ann=252):

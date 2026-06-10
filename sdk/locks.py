@@ -11,7 +11,8 @@ import socket
 import time
 from pathlib import Path
 
-LOCK_DIR = Path(os.environ.get("HEPH_LOCK_DIR", "/root/research-wiki/.locks"))
+from crucible_paths import LOCKS
+LOCK_DIR = Path(os.environ.get("HEPH_LOCK_DIR", LOCKS))
 
 
 def _me() -> str:

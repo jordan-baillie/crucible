@@ -4,7 +4,7 @@ import json, subprocess
 from pathlib import Path
 from agent.config import pi_cmd
 
-WIKI = Path("/root/research-wiki")
+from crucible_paths import WIKI  # central config
 SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 
 

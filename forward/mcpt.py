@@ -12,8 +12,8 @@ Run on CANDIDATES only (it re-runs the signal N times). Best for price-panel str
 import importlib
 import sys
 
-sys.path.insert(0, "/root/hephaestus")
-sys.path.insert(0, "/root/hephaestus/forward")
+sys.path.insert(0, "/root/crucible")
+sys.path.insert(0, "/root/crucible/forward")
 import numpy as np
 import pandas as pd
 

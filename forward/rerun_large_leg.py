@@ -1,5 +1,5 @@
 import sys, json, traceback
-sys.path.insert(0, '/root/hephaestus')
+sys.path.insert(0, '/root/crucible')
 from importlib import import_module
 MOD = 'strategies.auto_value_momentum_trend_overlay_large_cap_t_ithmtl_1968'
 print("RERUN_START", MOD, flush=True)
