@@ -125,3 +125,24 @@ def test_ledger_matches_deployed_valmom_semantics(rw):
         assert (k["ticker"], k["entry_date"], k["exit_date"], k["hold_days"]) == r[:4]
         assert k["position_value"] == pytest.approx(r[4])
         assert k["pnl"] == pytest.approx(r[5])
+
+
+def test_market_regime_lagged_and_labelled(rw):
+    from sdk.signal_kit import market_regime
+    idx, rets = rw
+    lab = market_regime(rets)
+    assert set(lab.unique()) <= {"?", "bull_calm", "bull_vol", "bear_calm", "bear_vol"}
+    assert (lab.iloc[:60] == "?").all(), "warmup must be '?', never a guessed label"
+    # LAG: relabel with the last day's returns changed wildly — today's label must not move
+    rets2 = rets.copy()
+    rets2.iloc[-1] = 0.5
+    assert market_regime(rets2).iloc[-1] == lab.iloc[-1], "same-day data leaked into the label"
+
+
+def test_trades_stamped_with_entry_regime(rw):
+    idx, rets = rw
+    W = pd.DataFrame(0.0, index=idx, columns=rets.columns)
+    W.iloc[300:320, 0] = 0.1
+    trades = trades_from_weights(W, rets, {"A": "Tech"})
+    assert trades[0]["entry_regime"] in {"bull_calm", "bull_vol", "bear_calm", "bear_vol", "?"}
+    assert trades[0]["entry_regime"] != "", "entry_regime must be stamped (I3)"

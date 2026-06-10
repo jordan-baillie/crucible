@@ -42,11 +42,39 @@ def net_of_cost(W: pd.DataFrame, rets: pd.DataFrame, cost_bps: float = 8.0,
     return net
 
 
+def market_regime(rets: pd.DataFrame, trend_lb: int = 126, vol_lb: int = 63) -> pd.Series:
+    """Per-date market-regime label from TRAILING data only (shift(1) — the label for day t
+    uses information through t-1; a regime stamped with same-day data is lookahead).
+
+    4 labels: bull/bear (sign of trailing equal-weight universe return) × calm/vol
+    (trailing realized vol vs its expanding median). Coarse on purpose — the cross-regime
+    gates need honest stratification, not a forecasting model.
+    """
+    mkt = rets.mean(axis=1)
+    trend = mkt.rolling(trend_lb, min_periods=trend_lb // 2).sum()
+    vol = mkt.rolling(vol_lb, min_periods=vol_lb // 2).std()
+    vol_med = vol.expanding(min_periods=vol_lb).median()
+    lab = pd.Series("?", index=rets.index)
+    known = trend.notna() & vol.notna() & vol_med.notna()
+    lab[known] = (np.where(trend[known] >= 0, "bull", "bear")
+                  + np.where(vol[known] > vol_med[known], "_vol", "_calm"))
+    return lab.shift(1).fillna("?")
+
+
 def trades_from_weights(W: pd.DataFrame, rets: pd.DataFrame, sector_map: dict,
-                        book: float = 1_000_000.0, min_weight: float = 1e-6) -> list:
+                        book: float = 1_000_000.0, min_weight: float = 1e-6,
+                        regimes: "pd.Series | None" = None) -> list:
     """CONTRACT trade ledger from a weight matrix: one trade per contiguous held run
     per name (run-length extraction). Vectorized inner loop (numpy), matches the
-    deployed val_mom implementation's ledger semantics."""
+    deployed val_mom implementation's ledger semantics.
+
+    regimes: per-date label Series (use market_regime(rets)) — stamps each trade's
+    entry_regime so the cross-regime robustness gates are REAL. Without it every trade
+    is regime '?' and the three regime gates pass vacuously (I3).
+    """
+    if regimes is None:
+        regimes = market_regime(rets)
+    reg = regimes.reindex(W.index).fillna("?").astype(str).tolist()
     trades = []
     W_arr, R_arr = W.fillna(0.0).values, rets.reindex_like(W).fillna(0.0).values
     dstr = [d.strftime("%Y-%m-%d") for d in W.index]
@@ -71,6 +99,7 @@ def trades_from_weights(W: pd.DataFrame, rets: pd.DataFrame, sector_map: dict,
                     "hold_days": int(j - i + 1),
                     "position_value": float(np.nanmean(seg_w) * book),
                     "pnl": float(np.nansum(seg_w * seg_r) * book),
+                    "entry_regime": reg[i],
                 })
                 i = j + 1
             else:

@@ -20,7 +20,8 @@ no config). It MUST define exactly:
 CONTRACT:
 - daily_returns: a pandas Series of daily net-of-cost portfolio returns, DatetimeIndex, name set.
 - trades: list of dicts, each {"ticker","sector","entry_date"(YYYY-MM-DD str),"exit_date","hold_days"(int),
-  "position_value"(float),"pnl"(float)} — used for deployment-sanity (needs >=50 trades, spread across
+  "position_value"(float),"pnl"(float),"entry_regime"(str, set by trades_from_weights)} — used for
+  deployment-sanity + cross-regime gates (needs >=50 trades, spread across
   sectors, no single name >40% of position-days). For a factor book, emit one trade per held position run.
 - grid: a few pre-declared param variants for the DSR effective-N (honest search burden); "default"={} is primary.
 - scope: 'broad' if the edge is a UNIVERSAL mechanism (a factor/premium theory says appears across markets ->
@@ -47,7 +48,11 @@ lookahead bug the harness can't see; the ONLY novel code in your module is the s
 - xs_zscore(df, winsor=(0.05,0.95)) -> cross-sectional per-date z-score, winsorized, NaN-preserving.
 - net_of_cost(W, rets, cost_bps=8.0, name=...) -> daily net returns from a LAGGED weight matrix
   (pass W.shift(1) if you built same-day weights — the lag is YOUR responsibility, state it in the code).
-- trades_from_weights(W, rets, sector_map) -> the CONTRACT trade ledger (run-length per held name).
+- trades_from_weights(W, rets, sector_map) -> the CONTRACT trade ledger (run-length per held name),
+  auto-stamping each trade's entry_regime (bull/bear x calm/vol, trailing-data-only) — the cross-regime
+  robustness gates depend on it. Never write entry_regime yourself; the kit's labeller is the standard.
+- market_regime(rets) -> the per-date regime label Series, if you need it for a regime FILTER in the
+  signal itself (it is shift(1)-lagged — safe to act on same-day).
 - pit_panel(sf1_df, field, dates, tickers) -> point-in-time fundamental panel (datekey-based, ffilled;
   never use calendardate — that's lookahead).
 A typical module body is therefore: build universe -> load panels -> compute YOUR signal -> weights

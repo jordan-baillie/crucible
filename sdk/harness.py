@@ -416,7 +416,17 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         grid[label] = r
 
     # --- the gates (non-bypassable) ---
-    result = ri.assemble_bundle(search.values, trades, grid_returns=grid)
+    # I4: stage-1 gates consume SEARCH-WINDOW trades only. The full ledger includes
+    # holdout-period trades, so concentration/regime/LOO gates were silently computed on
+    # quarantined data BEFORE the single OOS look was earned — a leak from the holdout into
+    # stage-1, and double-dipping the slice the write-once ledger protects.
+    # Membership by ENTRY date: exit-date filtering zeroes the ledger for low-turnover books
+    # whose holds straddle the boundary (verified live — empty ledger -> deployment gate fails
+    # mechanically, not on merit). Boundary-straddling trades carry some post-boundary PnL;
+    # accepted: the protected resource is the holdout RETURN series (gated by the write-once
+    # ledger), and entry-time membership uses no holdout information to SELECT trades.
+    search_trades = [t for t in trades if str(t.get("entry_date", "")) < spec.holdout_start]
+    result = ri.assemble_bundle(search.values, search_trades, grid_returns=grid)
     # assemble_bundle returns {"bundle": <gate inputs>, "diagnostics": ...}. evaluate_tiers AND the
     # verdict need the INNER bundle — passing the wrapper made EVERY gate 'missing' -> tier ALWAYS FAIL
     # (every forge run failed on this, not on merit). This is THE gate-wiring fix.
@@ -424,7 +434,9 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     # O1: keep the diagnostics assemble_bundle already computed (previously discarded) — they're
     # the reviewer's evidence: PBO detail, effective DSR trials, concentration, regime, LOO.
     diag = (result.get("diagnostics") or {}) if isinstance(result, dict) else {}
-    dep = ri.deployment_sanity(trades, strategy_meta={"max_positions": spec.deploy_max_positions})
+    # deployment sanity on search-window trades too: a strategy that only reaches >=50 trades /
+    # sector spread by counting holdout-period activity hasn't demonstrated it in-sample.
+    dep = ri.deployment_sanity(search_trades, strategy_meta={"max_positions": spec.deploy_max_positions})
 
     h_sh = _sharpe(holdout)  # s_sh computed above (survived the tier-0 screen)
     deg = (h_sh - s_sh) / abs(s_sh) * 100 if abs(s_sh) > 0.1 else None
