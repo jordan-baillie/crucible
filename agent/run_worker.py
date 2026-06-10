@@ -46,7 +46,7 @@ def _run_module(mod_stem: str):
             f"v = run_experiment(m.SPEC, write_wiki=True, alert=True)\n"
             f"import json; print('VERDICT_JSON='+json.dumps({{k:v[k] for k in v}}, default=str))\n")
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
-                       timeout=1800, cwd=str(ROOT), preexec_fn=apply_rlimits)
+                       timeout=2700, cwd=str(ROOT), preexec_fn=apply_rlimits)  # headroom for the stage-2 cross-universe battery on a stage-1 pass
     m = re.search(r"VERDICT_JSON=(\{.*\})", r.stdout)
     return (json.loads(m.group(1)) if m else None), (r.stdout + "\n" + r.stderr)
 
@@ -105,7 +105,7 @@ def run_one_from_queue():
             try:
                 verdict, log = _run_module(mod.stem)
             except subprocess.TimeoutExpired:
-                log = "TIMEOUT (>1800s)"
+                log = "TIMEOUT (>2700s)"
             if verdict is not None:
                 stages["backtest_s"] = round(time.time() - t_run, 1)
                 break
@@ -130,13 +130,21 @@ def run_one_from_queue():
         elite.record(outcome)  # feed the evolutionary pool (top-K by DSR) for the director to mutate
     except Exception:
         pass
-    if outcome["passed_all"]:  # PASS -> auto-deploy into the Atlas Paper Book (paper-on-live-data; no real capital)
+    # Deploy policy (still paper-only, no real capital):
+    #   PASSED_ALL (broad + stage-2 confirmed)        -> Paper Book (validated edge, accumulate live evidence)
+    #   stage-1 pass with LOCAL scope                  -> Paper Book too: forward-validation IS its
+    #     confirmation path, so the shadow track must start immediately (calendar time is the test).
+    v = outcome.get("verdict") or {}
+    deploy = outcome["passed_all"] or (isinstance(v, dict) and v.get("stage1_pass")
+                                       and v.get("scope") == "local")
+    if deploy:
         try:
             from live.deploy import deploy_to_paper
             res = deploy_to_paper(str(mod))
-            print(f"[{AGENT_ID}] PASS -> Paper Book: {res['name']} ({res['n_positions']} positions)")
+            why = "PASS" if outcome["passed_all"] else "LOCAL stage-1 candidate (forward-validation)"
+            print(f"[{AGENT_ID}] {why} -> Paper Book: {res['name']} ({res['n_positions']} positions)")
         except Exception as e:
-            print(f"[{AGENT_ID}] deploy_to_paper failed (PASS still recorded): {str(e)[:200]}")
+            print(f"[{AGENT_ID}] deploy_to_paper failed (verdict still recorded): {str(e)[:200]}")
     print(f"[{AGENT_ID}] DONE {sid} -> tier {verdict and verdict.get('tier')} | "
           f"PASSED_ALL={outcome['passed_all']}")
     return outcome

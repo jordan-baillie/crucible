@@ -42,6 +42,7 @@ class StrategySpec:
     # either cross-market generalization (broad mechanism) or forward-validation (defensibly local).
     scope: str = "broad"                       # "broad" (universal mechanism -> MUST generalize) | "local" (defensible universe-specific -> forward-validate)
     generalization_universes: list = field(default_factory=list)  # broad scope: untouched universes to confirm the mechanism in
+    load_gen_data: Callable = None             # broad scope: label -> panel for each generalization universe (UNTOUCHED; same shape as load_data())
     project: str = "hephaestus"
 
 
@@ -89,6 +90,38 @@ def _beta_decomp(search_ret, price_mx):
         return None
 
 
+def _stage2_generalize(spec: StrategySpec) -> tuple:
+    """STAGE-2 fluke-confirmation for BROAD-scope stage-1 passes: run the SAME frozen signal (default
+    params, no re-search) on each PRE-DECLARED untouched universe, score ONLY the holdout window, and
+    apply the breadth verdict (>=60% of >=3 universes positive OOS). This is the automated version of
+    forward/generalize.py — legitimate to run same-night because the universes were frozen in the
+    pre-registration and only their untouched holdouts are read (BAB lesson: breadth, never one slice).
+    Returns (results: dict|None, confirmed: bool, note: str)."""
+    loader = getattr(spec, "load_gen_data", None)
+    unis = list(getattr(spec, "generalization_universes", []) or [])
+    if not loader or len(unis) < 3:
+        return None, False, (f"stage-2 NOT runnable (load_gen_data={'set' if loader else 'missing'}, "
+                             f"{len(unis)} universes declared, need >=3) -> manual battery required "
+                             f"(forward/generalize.py)")
+    results = {}
+    for u in unis:
+        try:
+            r_u = pd.Series(spec.signal(loader(u), **spec.default_params)[0]).dropna()
+            h_u = r_u[r_u.index >= spec.holdout_start]
+            results[u] = round(_sharpe(h_u), 2) if len(h_u) > 20 else None
+        except Exception as e:
+            results[u] = None
+            print(f"[stage2] universe {u} failed: {type(e).__name__}: {str(e)[:120]}")
+    vals = [v for v in results.values() if v is not None]
+    pos = sum(1 for v in vals if v > 0)
+    if len(vals) < 3:
+        return results, False, f"stage-2 INCONCLUSIVE: only {len(vals)}/{len(unis)} universes ran (need >=3)"
+    frac = pos / len(vals)
+    if frac >= 0.60:
+        return results, True, f"stage-2 CONFIRMED: {pos}/{len(vals)} untouched universes positive OOS ({frac:.0%}) -> generalises"
+    return results, False, f"stage-2 REJECTED: {pos}/{len(vals)} positive OOS ({frac:.0%} < 60%) -> overfit outlier (cf. BAB)"
+
+
 def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     """Run one pre-registered hypothesis through ALL rails. Returns the verdict dict."""
     panel = spec.load_data()
@@ -117,7 +150,8 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             "holdout_reasons": [f"tier-0 screen: |search Sharpe| {abs(s_sh):.2f} < {SCREEN_FLOOR} -- no in-sample edge; full rails + holdout skipped"],
             "full_sharpe": round(_sharpe(full_ret), 3), "full_maxdd": round(_maxdd(full_ret), 3), "n_trades": len(trades),
             "stage1_pass": False, "confirmed": False, "scope": getattr(spec, "scope", "broad"),
-            "needs_confirmation": None, "PASSED_ALL_GATES": False,
+            "needs_confirmation": None, "generalization": None, "generalization_note": None,
+            "PASSED_ALL_GATES": False,
         }
         if write_wiki:
             from sdk.wiki import write_experiment
@@ -173,17 +207,27 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             h_reasons = list(h_reasons) + [
                 f"BETA-CONFOUND: beta_to_universe {decomp['beta_to_universe']} + selection-alpha Sharpe "
                 f"{decomp['selection_alpha_sharpe']} < {SEL_FLOOR} -> edge is long-only universe beta, demoted"]
-        # POLICY: a stage-1 pass is a CANDIDATE, never a confirmed edge. PASSED_ALL_GATES requires
-        # INDEPENDENT fluke-confirmation (generalization for broad scope, forward-validation for local)
-        # -- never auto-declared at run time. The BAB episode: it cleared every single-universe gate and
-        # was still a non-generalising overfit outlier.
-        passed_all = False
         try:
             ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": tier,
                                     "dsr": b.get("dsr"), "promote_dsr": bar, "n_families": n_fam,
                                     "holdout_touched": True, "passed_all": stage1_pass})
         except Exception:
             pass
+
+    # POLICY: a stage-1 pass is a CANDIDATE. PASSED_ALL_GATES requires INDEPENDENT fluke-confirmation.
+    # BROAD scope: the cross-universe battery runs HERE, same-night, on the PRE-DECLARED untouched
+    # universes (frozen in the spec before any data was touched -> still pre-registered, not mining).
+    # LOCAL scope: confirmation is forward-validation (calendar time) -> stays candidate; the worker
+    # auto-deploys it to shadow-paper so the forward track starts immediately.
+    gen_results, gen_confirmed, gen_note = None, False, None
+    if stage1_pass:
+        if getattr(spec, "scope", "broad") == "broad":
+            print("[stage2] stage-1 PASS on broad scope -> running cross-universe generalization battery...")
+            gen_results, gen_confirmed, gen_note = _stage2_generalize(spec)
+            print(f"[stage2] {gen_note}")
+        else:
+            gen_note = "local scope -> confirmation = forward-validation (auto-deploying to shadow paper)"
+    passed_all = bool(stage1_pass and gen_confirmed)
 
     verdict = {
         "id": spec.id, "family": spec.family, "title": spec.title, "markets": spec.markets,
@@ -197,16 +241,20 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "n_trades": len(trades),
         "beta_to_universe": decomp.get("beta_to_universe"),
         "selection_alpha_sharpe": decomp.get("selection_alpha_sharpe"), "beta_confound": beta_confound,
-        "stage1_pass": stage1_pass, "confirmed": False, "scope": getattr(spec, "scope", "broad"),
-        "needs_confirmation": (None if not stage1_pass else
+        "stage1_pass": stage1_pass, "confirmed": gen_confirmed, "scope": getattr(spec, "scope", "broad"),
+        "needs_confirmation": (None if not stage1_pass or passed_all else
             ("cross-market-generalization" if getattr(spec, "scope", "broad") == "broad" else "forward-validation")),
+        "generalization": gen_results, "generalization_note": gen_note,
         "PASSED_ALL_GATES": passed_all,
     }
 
     if write_wiki:
         from sdk.wiki import write_experiment
         write_experiment(spec, verdict)
-    if alert and stage1_pass:
+    if alert and passed_all:
+        from sdk.notify import telegram_pass
+        telegram_pass(spec, verdict)
+    elif alert and stage1_pass:
         from sdk.notify import telegram_candidate
         telegram_candidate(spec, verdict)
     return verdict

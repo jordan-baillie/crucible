@@ -7,6 +7,7 @@ WIKI = Path("/root/research-wiki")
 
 def write_experiment(spec, verdict: dict):
     status = ("VALIDATED" if verdict["PASSED_ALL_GATES"]
+              else "CANDIDATE" if verdict.get("stage1_pass")   # cleared stage-1, awaiting/failed confirmation
               else "NEAR-MISS" if (verdict.get("dsr") or 0) and verdict["dsr"] >= 0.85
               else "FAIL")
     page = WIKI / "experiments" / f"{spec.id}.md"
@@ -31,6 +32,9 @@ generated_by: hephaestus-agent
 - search Sharpe {verdict['search_sharpe']} -> holdout Sharpe {verdict['holdout_sharpe']} | **holdout_gate PASS={verdict['holdout_pass']}** {verdict['holdout_reasons']}
 - deployment passed={verdict['deployment_passed']} peak={verdict['deploy_peak']} sectors={verdict['deploy_sectors']} {verdict['deploy_reasons']}
 - full Sharpe {verdict['full_sharpe']} | maxDD {verdict['full_maxdd']} | trades {verdict['n_trades']}
+- stage-1 pass: {verdict.get('stage1_pass')} | scope: {verdict.get('scope')}
+- stage-2 generalization: {verdict.get('generalization')} — {verdict.get('generalization_note') or 'n/a'}
+- needs_confirmation: {verdict.get('needs_confirmation') or 'none'}
 - **PASSED ALL GATES: {verdict['PASSED_ALL_GATES']}**
 """)
     # append to log + index

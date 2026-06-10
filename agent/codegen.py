@@ -13,9 +13,11 @@ no config). It MUST define exactly:
 
   def load_data() -> pd.DataFrame:        # the panel signal() consumes (use the adapters below)
   def signal(panel, **params) -> (pd.Series daily_returns, list trades):
+  def load_gen_data(label) -> pd.DataFrame:  # REQUIRED for scope='broad': the panel for ONE
+      # generalization universe (same shape as load_data(); label is one of generalization_universes)
   SPEC = StrategySpec(id=..., family=..., title=..., markets=[...], data_desc=..., pre_registration=...,
                       load_data=load_data, signal=signal, default_params={...}, grid={label:params,...},
-                      scope='broad'|'local', generalization_universes=[...],
+                      scope='broad'|'local', generalization_universes=[...], load_gen_data=load_gen_data,
                       holdout_start="2022-01-01", deploy_max_positions=N)
 
 CONTRACT:
@@ -25,9 +27,13 @@ CONTRACT:
   sectors, no single name >40% of position-days). For a factor book, emit one trade per held position run.
 - grid: a few pre-declared param variants for the DSR effective-N (honest search burden); "default"={} is primary.
 - scope: 'broad' if the edge is a UNIVERSAL mechanism (a factor/premium theory says appears across markets ->
-  a stage-1 pass MUST later GENERALISE to other untouched universes, or it's an overfit outlier like BAB);
-  'local' if it's a defensibly UNIVERSE-SPECIFIC edge (then forward-validation confirms it). For 'broad' equity
-  factors set generalization_universes to untouched slices to confirm in, e.g. ['large','small','sectors'].
+  a stage-1 pass MUST GENERALISE to other untouched universes, or it's an overfit outlier like BAB);
+  'local' if it's a defensibly UNIVERSE-SPECIFIC edge (then forward-validation confirms it).
+- For 'broad': declare >=3 generalization_universes (DISJOINT from the search universe — different cap tier,
+  different sectors, or sub-slices that share NO tickers) AND implement load_gen_data(label) returning each
+  one's panel. The harness runs the STAGE-2 battery automatically on a stage-1 pass: same frozen signal +
+  default params on each universe's HOLDOUT only; >=60% must be OOS-positive or the candidate is rejected.
+  Keep each gen universe SMALL (~150-400 names) — it runs same-night, N+1 extra signal() calls.
 - Apply realistic costs (~8bps on turnover). Inverse-vol size. Weekly rebalance. NO look-ahead (lag signals 1 day).
 
 USE ONLY these tested imports (do NOT download raw / reinvent). Full data inventory: research-wiki/DATA_CATALOG.md.
