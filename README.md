@@ -1,6 +1,6 @@
 # Crucible
 
-**An autonomous quant-research machine that is honest with itself.**
+**An autonomous quant-research pipeline.**
 
 LLM agents ("smiths") generate trading-strategy hypotheses around the clock — generation is cheap
 and unlimited. The value is the **crucible**: a non-bypassable stack of statistical gates that
