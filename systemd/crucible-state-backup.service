@@ -3,6 +3,11 @@ Description=Nightly backup of research state (wiki + FDR registry + run_log + el
 
 [Service]
 Type=oneshot
+# git push needs HOME to find ~/.gitconfig + the credential store (systemd doesn't set it)
+Environment=HOME=/root
 # State (not code — code is in git): the wiki IS the research memory; registry/run_log/elite are the
 # forge's accumulated evidence; live/ has the forward-paper track record. 14 dated tarballs kept.
 ExecStart=/bin/bash -c 'set -e; D=/root/backups/research-state; mkdir -p $D; tar czf $D/state-$(date +%%Y-%%m-%%d).tar.gz /root/research-wiki /root/crucible/agent/run_log.jsonl /root/crucible/forward/bab_ledger.jsonl /root/atlas/data/live 2>/dev/null; ls -t $D/state-*.tar.gz | tail -n +15 | xargs -r rm'
+# Off-box: auto-commit + push the wiki to the private remote (github.com/jordan-245/research-wiki).
+# '|| true' on push: a network blip must not fail the tarball backup that already succeeded above.
+ExecStart=/bin/bash -c 'cd /root/research-wiki; git add -A; git -c user.name=crucible-backup -c user.email=crucible@local commit -q -m "nightly snapshot $(date +%%F)" || true; git push -q origin master || true'
