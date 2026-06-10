@@ -21,6 +21,16 @@ from crucible_paths import ROOT, WIKI  # central config
 sys.path.insert(0, str(ROOT))
 
 from agent import codegen
+
+
+def _forge_model() -> str | None:
+    """O3: record WHICH model generated this run (Fable-5 vs opus nights must be separable
+    in retrospectives — the 2026-06-10 routing incident made model attribution mandatory)."""
+    try:
+        from agent.config import MODEL
+        return MODEL
+    except Exception:
+        return None
 from agent.sandbox import scan_code, apply_rlimits
 from agent.director import top_up
 from sdk import queue
@@ -117,9 +127,26 @@ def run_one_from_queue():
         log = f"WORKER EXCEPTION: {type(e).__name__}: {str(e)[:300]}"
         print(f"[{AGENT_ID}] {log}")
     stages["total_s"] = round(time.time() - t_cycle, 1)
-    outcome = {"ts": datetime.now().isoformat(), "agent": AGENT_ID, "queue_id": item["id"],
-               "id": sid, "title": prop.get("title"), "proposal": prop,
-               "ran": verdict is not None, "verdict": verdict, "stages": stages,
+    # O3 (schema v2): classify HOW a non-run failed — 'ran: false' alone hid whether the night
+    # was lost to codegen, sandbox rejections, runtime crashes, or timeouts (different fixes).
+    if verdict is not None:
+        fail_reason = None
+    elif log.startswith("WORKER EXCEPTION"):
+        fail_reason = "worker_exception"
+    elif "TIMEOUT" in log:
+        fail_reason = "backtest_timeout"
+    elif stages["run_attempts"] == 0:
+        fail_reason = "sandbox_rejected"  # never produced acceptable code
+    else:
+        fail_reason = "runtime_error"     # ran out of fix-retries on tracebacks
+    outcome = {"schema": 2, "ts": datetime.now().isoformat(), "agent": AGENT_ID,
+               "queue_id": item["id"], "id": sid, "title": prop.get("title"), "proposal": prop,
+               "model": _forge_model(), "thinking": os.environ.get("FORGE_THINKING") or None,
+               "ran": verdict is not None, "fail_reason": fail_reason,
+               "tier": (verdict or {}).get("tier"),  # top-level: greppable without parsing verdict
+               "module_sha": (verdict or {}).get("module_sha"),
+               "repo_sha": (verdict or {}).get("repo_sha"),
+               "verdict": verdict, "stages": stages, "log_tail": (None if verdict is not None else log[-800:]),
                "passed_all": bool(verdict and verdict.get("PASSED_ALL_GATES"))}
     RUNLOG.parent.mkdir(exist_ok=True)
     with FileLock("runlog", ttl=30):  # proposals can exceed the 4KB atomic-append size

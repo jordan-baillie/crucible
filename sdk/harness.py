@@ -50,6 +50,36 @@ class StrategySpec:
 from sdk.stats import sharpe as _sharpe, maxdd as _maxdd_canon  # canonical (sdk/stats.py)
 
 
+def _provenance(spec) -> dict:
+    """O1: WHICH code produced this verdict. Module SHA pins the generated strategy file;
+    repo SHA pins the harness/gate stack it ran through. Never raises."""
+    module_file, module_sha = None, None
+    try:
+        import hashlib
+        import inspect
+        src = inspect.getsourcefile(spec.signal)
+        if src and Path(src).exists():
+            module_file = str(Path(src))
+            module_sha = hashlib.sha1(Path(src).read_bytes()).hexdigest()[:12]
+    except Exception:
+        pass
+    return {"module_file": module_file, "module_sha": module_sha, "repo_sha": _repo_sha(),
+            "default_params": dict(spec.default_params or {}), "holdout_start": spec.holdout_start}
+
+
+def _repo_sha() -> str | None:
+    """Crucible repo HEAD at run time (O1 provenance). Read from .git directly — no subprocess
+    (works inside restricted contexts), never raises."""
+    try:
+        git = Path(__file__).resolve().parents[1] / ".git"
+        head = (git / "HEAD").read_text().strip()
+        if head.startswith("ref: "):
+            return (git / head[5:]).read_text().strip()[:12]
+        return head[:12]
+    except Exception:
+        return None
+
+
 def _sharpe_doc_anchor():
     """_sharpe is sdk.stats.sharpe — ONE definition repo-wide (was 8 divergent copies)."""
 
@@ -347,6 +377,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             "stage1_pass": False, "confirmed": False, "scope": getattr(spec, "scope", "broad"),
             "needs_confirmation": None, "generalization": None, "generalization_note": None,
             "PASSED_ALL_GATES": False, "registry_recorded": registry_recorded,
+            **_provenance(spec),  # O1: even a SCREEN_FAIL page must say WHICH code failed
         }
         if write_wiki:
             from sdk.wiki import write_experiment
@@ -390,6 +421,9 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     # verdict need the INNER bundle — passing the wrapper made EVERY gate 'missing' -> tier ALWAYS FAIL
     # (every forge run failed on this, not on merit). This is THE gate-wiring fix.
     b = (result.get("bundle") or {}) if isinstance(result, dict) else {}
+    # O1: keep the diagnostics assemble_bundle already computed (previously discarded) — they're
+    # the reviewer's evidence: PBO detail, effective DSR trials, concentration, regime, LOO.
+    diag = (result.get("diagnostics") or {}) if isinstance(result, dict) else {}
     dep = ri.deployment_sanity(trades, strategy_meta={"max_positions": spec.deploy_max_positions})
 
     h_sh = _sharpe(holdout)  # s_sh computed above (survived the tier-0 screen)
@@ -475,6 +509,8 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
                         "local scope but MCPT FAIL -> construction artifact, NOT deploying to paper")
     passed_all = bool(stage1_pass and mcpt_pass and gen_confirmed)
 
+    grid_sharpes = {label: round(_sharpe(r), 3) for label, r in grid.items()}
+
     verdict = {
         "id": spec.id, "family": spec.family, "title": spec.title, "markets": spec.markets,
         "tier": tier, "promote_bar": round(bar, 3), "n_families": n_fam,
@@ -494,6 +530,13 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "generalization": gen_results, "generalization_note": gen_note,
         "PASSED_ALL_GATES": passed_all, "registry_recorded": registry_recorded,
         "holdout_burned": holdout_burned, "config_hash": cfg_hash,
+        # O1 — reproducibility + gate diagnostics
+        **_provenance(spec),
+        "grid_sharpes": grid_sharpes,
+        "diagnostics": {k: diag.get(k) for k in (
+            "pbo", "dsr_grid", "dsr_source", "dsr_n_trials_raw", "dsr_n_trials_effective",
+            "grid_participation_ratio", "search_burden", "ticker_concentration",
+            "regime", "n_obs", "cpcv") if k in diag},
     }
 
     if write_wiki:

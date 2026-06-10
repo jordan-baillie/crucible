@@ -62,8 +62,19 @@ def forge_section() -> list:
     for r in runs:
         v = r.get("verdict") or {}
         tier = (v.get("tier") if isinstance(v, dict) else None) or "—"
-        mark = "🟢" if r.get("passed_all") else ("✗" if tier in ("FAIL", "SCREEN_FAIL") else "🟡")
-        lines.append(f"  {mark} {tier[:7]:<7} {str(r.get('title', '?'))[:52]}")
+        mark = ("🟢" if r.get("passed_all")
+                else "✗" if (tier in ("FAIL", "SCREEN_FAIL") or not r.get("ran"))
+                else "🟡")
+        # O4/O3: a non-run shows WHY (schema-2 fail_reason), not a bare dash
+        why = f" [{r['fail_reason']}]" if (not r.get("ran") and r.get("fail_reason")) else ""
+        lines.append(f"  {mark} {tier[:7]:<7} {str(r.get('title', '?'))[:52]}{why}")
+    # O4: near-misses deserve eyes — they're the director's mutation fuel
+    nm = [r for r in runs if isinstance(r.get("verdict"), dict)
+          and (r["verdict"].get("dsr") or 0) >= 0.85 and not r.get("passed_all")]
+    for r in nm:
+        v = r["verdict"]
+        lines.append(f"  🔍 near-miss: {str(r.get('title','?'))[:40]} DSR {v.get('dsr')} "
+                     f"holdout {v.get('holdout_sharpe')} (bar was {v.get('promote_bar')})")
     # stage health (instrumented runs only)
     st = [r["stages"] for r in runs if isinstance(r.get("stages"), dict)]
     if st:
@@ -176,10 +187,33 @@ def main() -> None:
                 + bab_section() + ops_section())
     msg = "☀️ <b>Morning report</b> — " + datetime.now().strftime("%a %Y-%m-%d") + "\n\n" \
           + "\n".join(s for s in sections if s is not None)
-    ok = telegram_msg(msg[:4000])  # Telegram hard limit 4096
+    ok = all(telegram_msg(part) for part in _split_html(msg))
     print(f"[morning_report] sent={ok} chars={len(msg)}")
     if not ok:
         sys.exit(1)  # visible as a failed unit -> shows up in tomorrow's ops section
+
+
+def _split_html(msg: str, limit: int = 4000) -> list:
+    """O4 truncation fix: msg[:4000] could cut MID-<b> TAG -> Telegram rejects the whole
+    message as malformed HTML -> busiest nights silently lose their report. Split on line
+    boundaries instead and close any dangling <b> per part (the only tag we emit)."""
+    if len(msg) <= limit:
+        return [msg]
+    parts, cur = [], ""
+    for line in msg.split("\n"):
+        if len(cur) + len(line) + 1 > limit:
+            parts.append(cur)
+            cur = line
+        else:
+            cur = cur + "\n" + line if cur else line
+    if cur:
+        parts.append(cur)
+    fixed = []
+    for p in parts:
+        if p.count("<b>") > p.count("</b>"):
+            p += "</b>"
+        fixed.append(p)
+    return fixed
 
 
 if __name__ == "__main__":
