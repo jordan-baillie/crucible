@@ -79,6 +79,25 @@ def prune_forge_logs(days: int = 30):
     return n
 
 
+def prune_elite():
+    """Drop CLOSED-family entries from the elite pool. sample() already filters them at draw
+    time, but they occupy top-K slots (K=12) and can crowd out live-family elites at record time
+    — selective forgetting applies to the evolutionary memory too (2026-06-10 note)."""
+    from agent.elite import POOL, _closed_families, _family, _load
+    closed = _closed_families()
+    if not closed or not POOL.exists():
+        return 0
+    from sdk.locks import FileLock
+    with FileLock("elite-pool", ttl=60):
+        items = _load()
+        kept = [i for i in items if _family(i) not in closed]
+        if len(kept) == len(items):
+            return 0
+        import json
+        POOL.write_text("".join(json.dumps(i) + "\n" for i in kept))
+        return len(items) - len(kept)
+
+
 def orphans():
     """Pages with no inbound [[wikilink]] (excluding spine pages)."""
     pages = {p.stem for p in WIKI.rglob("*.md")}
@@ -91,6 +110,7 @@ def orphans():
 def lint():
     a, d = cap_log(), prune_candidates()
     n_arch, n_logs = archive_strategies(), prune_forge_logs()
+    n_elite_pruned = prune_elite()
     nexp = len(list((WIKI / "experiments").glob("*.md")))
     reg = WIKI / ".registry" / "hypothesis_registry.jsonl"
     nreg = len(reg.read_text().splitlines()) if reg.exists() else 0
@@ -99,7 +119,8 @@ def lint():
     npages = len(list(WIKI.rglob("*.md")))
     orph = orphans()
     print(f"[lint] {datetime.now():%Y-%m-%d}: archived {a} log entries | pruned {d} tested candidates | "
-          f"archived {n_arch} old strategy modules | pruned {n_logs} old forge logs")
+          f"archived {n_arch} old strategy modules | pruned {n_logs} old forge logs | "
+          f"pruned {n_elite_pruned} closed-family elites")
     print(f"[lint] health: {nexp} experiments | {nreg} registry rows | {npages} pages | {nelite} elite | orphans {orph}")
     with (WIKI / "log.md").open("a") as f:
         f.write(f"\n## [{datetime.now():%Y-%m-%d}] lint | archived {a} log, pruned {d} candidates | "
