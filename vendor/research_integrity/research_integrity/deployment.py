@@ -1,6 +1,6 @@
 """Rail 3 — Deployment-sanity (SHARED research-integrity infra).
 
-PROJECT-AGNOSTIC: deployment_sanity/expected_positions are pure. `deployment_smoke` is the ATLAS
+PROJECT-AGNOSTIC: deployment_sanity/expected_positions are pure. (the old `deployment_smoke` ATLAS
 reference runner. For non-equity projects (e.g. Hermes betting) define your own thresholds/analog
 (bets/day, game spread, single-game share) or call deployment_sanity on bet-trade dicts. Original:
 
@@ -145,41 +145,9 @@ def deployment_sanity(trades: List[Dict[str, Any]],
     return out
 
 
-def deployment_smoke(strategy: str, market: str = "sp500", max_positions: int = 35) -> Dict[str, Any]:
-    """Queue-hygiene gate: run the strategy's DEFAULT config ONCE and check deployment-sanity.
+# NOTE (S6 2026-06-10): deployment_smoke (Atlas reference runner) REMOVED as dead code — imported
+# nonexistent atlas modules, zero callers. Projects call deployment_sanity() on their own trades.
 
-    Used before a generated strategy earns a full battery slot — don't flood the queue with
-    degenerate / non-deploying strategies. (Rail 3 also catches these at screen time; this just
-    avoids spending a full battery run on junk.) Returns the deployment_sanity dict plus `ok`.
-    Lazy-imports the engine so this module's top level stays pure.
-    """
-    import sys
-    from pathlib import Path as _Path
-    proj = _Path(__file__).resolve().parents[2]
-    sys.path.insert(0, str(proj))
-    try:
-        import scripts.validate_oos as vo
-        from backtest.engine import BacktestEngine
-        from scripts.strategy_evaluator import STRATEGY_REGISTRY, load_sandbox_strategy
-        from utils.config import get_active_config
-        data = vo.load_data(market=market)
-        data = {k: v for k, v in data.items() if len(v) >= 260}
-        base = get_active_config(market)
-        base.setdefault("strategies", {})[strategy] = {"enabled": True}
-        base.setdefault("risk", {})["max_open_positions"] = max_positions
-        cls = STRATEGY_REGISTRY.get(strategy) or load_sandbox_strategy(strategy)
-        if cls is None:
-            return {"ok": False, "passed": False, "forced_fail_reasons": [f"strategy '{strategy}' not found"]}
-        res = BacktestEngine(base).run_walkforward(data, [cls(base)])
-        dep = deployment_sanity(res.trades, primary_config={},
-                                strategy_meta={"max_positions": max_positions,
-                                               "max_sector_concentration": base.get("risk", {}).get("max_sector_concentration", 2)})
-        dep["ok"] = dep["passed"]
-        return dep
-    except Exception as e:  # fail-open: never let a smoke error block generation
-        return {"ok": True, "passed": None, "smoke_error": str(e), "forced_fail_reasons": []}
-
-
-__all__ = ["deployment_sanity", "expected_positions", "deployment_smoke",
+__all__ = ["deployment_sanity", "expected_positions", 
            "MIN_TRADES", "MIN_PEAK_FRAC_OF_DESIGN", "MIN_PEAK_ABS",
            "MAX_SINGLE_NAME_SHARE", "MIN_REALIZED_VS_DESIGN"]

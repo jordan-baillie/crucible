@@ -78,5 +78,5 @@ ri.append_run({"strategy":"pitcher_k","family":ri.family_of("pitcher_k"),"final_
 
 ## What's project-specific (you write it)
 The shared package is SCORING + GATES. You provide the **runner**: produce search-period returns+trades,
-quarantine + produce holdout returns+trades. `evaluate_holdout`/`deployment_smoke` in the package are the
+quarantine + produce holdout returns+trades. projects write their own runners over the pure gates — they were
 ATLAS reference runners (they lazy-import the Atlas engine) — copy their shape, not their guts.

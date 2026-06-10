@@ -13,7 +13,8 @@ import math
 import numpy as np
 import pandas as pd
 
-DAYS_PER_YEAR = 365
+DAYS_PER_YEAR = 365      # crypto/perp convention (24/7 markets — Midas heritage)
+TRADING_DAYS = 252       # equities convention. PICK EXPLICITLY — see annualized_sharpe.
 
 
 def _arr(returns) -> np.ndarray:
@@ -34,6 +35,11 @@ def sharpe(returns, periods: int = 1) -> float:
 
 
 def annualized_sharpe(returns, periods_per_year: int = DAYS_PER_YEAR) -> float:
+    """FOOTGUN WARNING (S6): the default is 365 — the CRYPTO/perp convention (24/7 markets).
+    For EQUITIES daily returns you MUST pass periods_per_year=TRADING_DAYS (252); relying on
+    the default inflates an equities Sharpe by sqrt(365/252) ≈ 1.20x (a fake +20%).
+    Every caller should pass the convention explicitly; the default exists only for
+    backward compatibility with the original Midas perp-carry harness."""
     return sharpe(returns, periods=periods_per_year)
 
 
@@ -123,6 +129,6 @@ def summary(returns, periods_per_year: int = DAYS_PER_YEAR) -> dict:
 
 
 __all__ = [
-    "DAYS_PER_YEAR", "sharpe", "annualized_sharpe", "profit_factor", "equity_curve",
+    "DAYS_PER_YEAR", "TRADING_DAYS", "sharpe", "annualized_sharpe", "profit_factor", "equity_curve",
     "max_drawdown", "max_drawdown_from_returns", "skewness", "kurtosis", "summary",
 ]

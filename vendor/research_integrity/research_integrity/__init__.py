@@ -13,7 +13,7 @@ so they bolt onto ANY project's backtest/walk-forward output:
   Rail 3 deployment : deployment_sanity(trades, ...) — did the strategy actually deploy as designed
 
 Per-project state (holdout config, ledger, registry) lives under $RESEARCH_INTEGRITY_DIR (default cwd).
-`evaluate_holdout`/`deployment_smoke` in holdout.py/deployment.py are the ATLAS reference runners;
+Each project writes its OWN holdout/deployment runner and calls the pure gates;
 other projects supply their own runner (produce returns+trades) and call the gates. See README.md.
 """
 from __future__ import annotations
