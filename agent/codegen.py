@@ -115,7 +115,7 @@ def consistency_check(proposal: dict, code: str) -> tuple:
     on a parse error (best-effort guard, not a hard gate). Returns (ok: bool, issues: str)."""
     claim = {k: proposal.get(k) for k in ("premium", "market", "signal_approach", "why_not_duplicate")}
     prompt = (f"PROPOSAL (the economic thesis the code MUST implement):\n{json.dumps(claim, indent=2)}\n\n"
-              f"GENERATED CODE:\n```python\n{code[:6500]}\n```\n\n"
+              f"GENERATED CODE:\n```python\n{code[:30000]}\n```\n\n"  # full module (Fable writes 15-20K; a truncated view causes false 'code is truncated' verdicts -> wasted fix() calls)
               f"Does the code FAITHFULLY implement that thesis + frozen signal construction? Check specifically: "
               f"the actual computation matches the claimed mechanism/direction; point-in-time data (datekey, no "
               f"look-ahead); correct adjustments (splits, dividends, costs); the right universe; the signal sign. "
