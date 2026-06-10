@@ -43,14 +43,14 @@ agents must obey on the next cycle.
                                                               ┌───────────────────────┐
                                                               │ paper book (optional  │
                                                               │ execution host) — no  │
-                                                              │ real capital, ever    │
+                                                              │ real capital          │
                                                               └───────────────────────┘
 ```
 
 ### The gate stack
 
 ```
-STAGE 1 — statistical                          STAGE 2 — adversarial (same night)
+STAGE 1 — statistical                          STAGE 2 — adversarial
   ├ tier-0 screen (|search Sharpe| ≥ 0.3)        ├ MCPT permutation test FIRST   p ≤ 0.05
   ├ CPCV + PBO + Deflated Sharpe                 │   (permute prices, re-run the frozen
   ├ FDR-aware promote bar — RISES with           │    signal: a real edge dies on noise;
