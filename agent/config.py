@@ -17,6 +17,22 @@ def _policy_model(tier: str = "frontier", failsafe: str = "claude-opus-4-8") -> 
 MODEL = os.environ.get("FORGE_MODEL") or _policy_model()
 SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 
+# Optional extended-thinking level for forge LLM calls (FORGE_THINKING env).
+# Accepts pi's native levels (off/minimal/low/medium/high/xhigh) plus the
+# 'ultracode'/'ultrathink' alias = maximum reasoning (xhigh). Unset = pi default.
+_THINKING_ALIASES = {"ultracode": "xhigh", "ultrathink": "xhigh"}
+_VALID_THINKING = {"off", "minimal", "low", "medium", "high", "xhigh"}
+
+
+def _thinking_args() -> list[str]:
+    lvl = (os.environ.get("FORGE_THINKING") or "").strip().lower()
+    if not lvl:
+        return []
+    lvl = _THINKING_ALIASES.get(lvl, lvl)
+    if lvl not in _VALID_THINKING:
+        return []  # never crash a smith over a typo'd env var
+    return ["--thinking", lvl]
+
 
 def pi_cmd() -> list[str]:
     """The pi invocation for ALL forge LLM calls.
@@ -25,5 +41,5 @@ def pi_cmd() -> list[str]:
     Without it, pi runs AGENTICALLY and the codegen step ran the entire backtest itself in a bash
     tool loop until the 15-min timeout -> crash, plus ~2x compute and heavy Max-quota burn (the
     issuance-factor run died exactly this way). --no-context-files skips AGENTS.md discovery."""
-    return ["pi", "-p", "--model", MODEL, "--no-tools", "--no-context-files",
+    return ["pi", "-p", "--model", MODEL, *_thinking_args(), "--no-tools", "--no-context-files",
             "--system-prompt", SYS, "--mode", "json"]
