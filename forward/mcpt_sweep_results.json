@@ -1,0 +1,62 @@
+{
+  "val_mom_trend_smallcap": {
+    "module": "strategies.auto_value_momentum_complementary_combination_smith2_96154",
+    "deployed": true,
+    "beta_to_universe": 0.36,
+    "id": "val_mom_trend_smallcap",
+    "real_sharpe": 1.013,
+    "mcpt": {
+      "n_ran": 50,
+      "early_stop": false,
+      "benchmark_relative": true,
+      "real_stat": 0.125,
+      "perm_mean": -2.436,
+      "perm_p95": -2.128,
+      "perm_max": -2.08,
+      "p_value": 0.0196,
+      "pass": true
+    },
+    "mcpt_pass": true,
+    "elapsed_s": 833.6
+  },
+  "value_mom_smallmid_sectorneutral": {
+    "module": "strategies.auto_value_momentum_complementary_combination_smith1_99655",
+    "deployed": false,
+    "beta_to_universe": 0.71,
+    "id": "value_mom_smallmid_sectorneutral",
+    "real_sharpe": 0.623,
+    "mcpt": {
+      "n_ran": 50,
+      "early_stop": false,
+      "benchmark_relative": true,
+      "real_stat": -0.343,
+      "perm_mean": -3.216,
+      "perm_p95": -2.925,
+      "perm_max": -2.729,
+      "p_value": 0.0196,
+      "pass": true
+    },
+    "mcpt_pass": true,
+    "elapsed_s": 1417.3
+  },
+  "value_momentum_complementary_xs_v1": {
+    "module": "strategies.auto_value_momentum_complementary_combination_smith3_26200",
+    "deployed": false,
+    "beta_to_universe": 0.96,
+    "id": "value_momentum_complementary_xs_v1",
+    "real_sharpe": 0.793,
+    "mcpt": {
+      "n_ran": 50,
+      "early_stop": false,
+      "benchmark_relative": true,
+      "real_stat": -0.075,
+      "perm_mean": -6.496,
+      "perm_p95": -6.191,
+      "perm_max": -5.918,
+      "p_value": 0.0196,
+      "pass": true
+    },
+    "mcpt_pass": true,
+    "elapsed_s": 487.3
+  }
+}

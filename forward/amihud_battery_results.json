@@ -1,0 +1,43 @@
+{
+  "id": "amihud_illiquidity_smallcap",
+  "module": "strategies.auto_amihud_illiquidity_risk_premium_in_survi_smith2_99439",
+  "started": "2026-06-10T11:52:10.886161",
+  "n_perms": 50,
+  "holdout": "2022-01-01",
+  "real_full_sharpe": 1.332,
+  "real_holdout_sharpe": 1.311,
+  "mcpt": {
+    "n_ran": 50,
+    "perm_mean": 1.51,
+    "perm_p95": 1.786,
+    "perm_max": 1.937,
+    "p_value": 0.9412,
+    "pass": false
+  },
+  "generalization": {
+    "mid_a": {
+      "n_names": 610,
+      "insample_sharpe": 1.28,
+      "holdout_sharpe": 1.82
+    },
+    "mid_b": {
+      "n_names": 460,
+      "insample_sharpe": 1.52,
+      "holdout_sharpe": 1.85
+    },
+    "large": {
+      "n_names": 1031,
+      "insample_sharpe": 1.36,
+      "holdout_sharpe": 0.96
+    }
+  },
+  "breadth": {
+    "ran": 3,
+    "positive": 3,
+    "pass": true,
+    "note": "3/3 untouched universes positive OOS"
+  },
+  "CONFIRMED": false,
+  "elapsed_s": 697.6,
+  "finished": "2026-06-10T12:03:47.960902"
+}

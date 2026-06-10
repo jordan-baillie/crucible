@@ -120,13 +120,37 @@ def _permute_panel_prices(panel, rng):
     return new
 
 
-def _stage2_mcpt(spec: StrategySpec, panel, real_sharpe: float, n: int = 50) -> tuple:
+def _mcpt_stat(spec: StrategySpec, panel, benchmark_relative: bool):
+    """MCPT statistic on ONE panel. benchmark_relative (long-biased books): Sharpe MINUS the
+    equal-weight-universe Sharpe on the SAME panel — time-shuffling destroys cross-sectional
+    correlation, which mechanically inflates ANY diversified long book's Sharpe to ~3+ (fake
+    perfect diversification that cannot exist in real markets); the EW benchmark enjoys the
+    identical inflation, so the difference isolates SELECTION skill. Market-neutral books
+    (legs cancel the common factor): absolute Sharpe is a fair null."""
+    sh = _sharpe(pd.Series(spec.signal(panel, **spec.default_params)[0]).dropna())
+    if not benchmark_relative:
+        return sh
+    px = _price_matrix(panel)
+    bench = _sharpe(px.pct_change().mean(axis=1)) if px is not None else 0.0
+    return sh - bench
+
+
+def _stage2_mcpt(spec: StrategySpec, panel, real_sharpe: float, n: int = 50,
+                 beta_to_universe: float | None = None) -> tuple:
     """STAGE-2 MCPT (Monte Carlo Permutation Test) — runs BEFORE breadth. Permutes the price panel
-    (no structure left to exploit), re-runs the FROZEN signal, p = P(perm >= real). A construction
-    artifact (vol-targeted noise-sorting, bid-ask bounce harvesting, long-only beta) reproduces on
+    (no structure left to exploit), re-runs the FROZEN signal, p = P(perm stat >= real stat). A
+    construction artifact (vol-targeted noise-sorting, bid-ask bounce harvesting) reproduces on
     permuted data -> high p. Breadth CANNOT catch these (they replicate on every universe — confirmed
     twice: value×mom p=0.97 after 2/2 tiers, amihud p=0.94 after 3/3 universes). PASS bar p<=0.05.
+    LONG-BIASED books (|beta| evidence of carrying the universe factor, beta > 0.3) use the
+    benchmark-RELATIVE statistic (see _mcpt_stat) — absolute Sharpe under time-shuffle mechanically
+    fails every diversified long book (decorrelation inflation, perm means 3-5 observed).
     Early-stops once enough exceedances make p>0.05 mathematically certain. Returns (result, passed)."""
+    bench_rel = beta_to_universe is not None and beta_to_universe > 0.3
+    try:
+        real_stat = _mcpt_stat(spec, panel, bench_rel)
+    except Exception as e:
+        return {"note": f"real-stat computation failed: {type(e).__name__}: {str(e)[:100]}"}, False
     rng = np.random.default_rng(0)
     max_exceed = int(0.05 * (n + 1)) - 1            # max exceedances that still allow p<=0.05
     perms, exceed = [], 0
@@ -135,28 +159,31 @@ def _stage2_mcpt(spec: StrategySpec, panel, real_sharpe: float, n: int = 50) -> 
         if p is None:
             return {"note": "no price matrix — MCPT not applicable to this panel shape"}, True
         try:
-            sh = _sharpe(pd.Series(spec.signal(p, **spec.default_params)[0]).dropna())
+            sh = _mcpt_stat(spec, p, bench_rel)
         except Exception as e:
             print(f"[mcpt] perm {i} failed: {type(e).__name__}: {str(e)[:100]}")
             continue
         perms.append(sh)
-        if sh >= real_sharpe:
+        if sh >= real_stat:
             exceed += 1
             if exceed > max_exceed:                  # fail certain — stop burning compute
                 pval = (exceed + 1) / (len(perms) + 1)
-                res = {"n_ran": len(perms), "early_stop": True, "perm_mean": round(float(np.mean(perms)), 3),
+                res = {"n_ran": len(perms), "early_stop": True, "benchmark_relative": bench_rel,
+                       "real_stat": round(real_stat, 3), "perm_mean": round(float(np.mean(perms)), 3),
                        "perm_max": round(float(np.max(perms)), 3), "p_value_lb": round(pval, 4), "pass": False}
-                print(f"[mcpt] EARLY FAIL after {len(perms)} perms ({exceed} >= real {real_sharpe:.2f})")
+                print(f"[mcpt] EARLY FAIL after {len(perms)} perms ({exceed} >= real stat {real_stat:.2f}, "
+                      f"bench_rel={bench_rel})")
                 return res, False
     if not perms:
         return {"note": "all perms errored — inconclusive, treating as FAIL"}, False
     arr = np.array(perms)
-    pval = float((np.sum(arr >= real_sharpe) + 1) / (len(arr) + 1))
-    res = {"n_ran": len(perms), "early_stop": False, "perm_mean": round(float(arr.mean()), 3),
+    pval = float((np.sum(arr >= real_stat) + 1) / (len(arr) + 1))
+    res = {"n_ran": len(perms), "early_stop": False, "benchmark_relative": bench_rel,
+           "real_stat": round(real_stat, 3), "perm_mean": round(float(arr.mean()), 3),
            "perm_p95": round(float(np.percentile(arr, 95)), 3), "perm_max": round(float(arr.max()), 3),
            "p_value": round(pval, 4), "pass": pval <= 0.05}
-    print(f"[mcpt] {len(perms)} perms | real {real_sharpe:.2f} | perm mean {arr.mean():.2f} | "
-          f"p={pval:.4f} -> {'PASS' if res['pass'] else 'FAIL'}")
+    print(f"[mcpt] {len(perms)} perms | real stat {real_stat:.2f} (bench_rel={bench_rel}) | "
+          f"perm mean {arr.mean():.2f} | p={pval:.4f} -> {'PASS' if res['pass'] else 'FAIL'}")
     return res, bool(res["pass"])
 
 
@@ -296,7 +323,8 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         # across universes (breadth blind) and would auto-deploy as local candidates. Cheap vs the cost
         # of a false PASS; early-stops on certain failure.
         print("[stage2] stage-1 PASS -> running MCPT (permutation test) first...")
-        mcpt_res, mcpt_pass = _stage2_mcpt(spec, panel, _sharpe(full_ret))
+        mcpt_res, mcpt_pass = _stage2_mcpt(spec, panel, _sharpe(full_ret),
+                                           beta_to_universe=(decomp or {}).get("beta_to_universe"))
         if getattr(spec, "scope", "broad") == "broad":
             if mcpt_pass:
                 print("[stage2] MCPT pass -> running cross-universe generalization battery...")
