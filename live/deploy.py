@@ -104,8 +104,15 @@ def write_target(name: str, weights: dict, strategy_path: str) -> Path:
     return f
 
 
-def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: float = 100000.0,
-                    broker: str = os.environ.get("CRUCIBLE_BROKER", "alpaca")) -> dict:
+# Default paper allocation for an auto-deployed PASS. $5K is the pre-registered "deployable at $5K"
+# design size every smith hypothesis is required to honor; 2026-06-12 lesson: the old 100_000 default
+# deployed tranched_v3 at 7x account equity -> 369/498 orders rejected (insufficient buying power).
+DEFAULT_CAPITAL = float(os.environ.get("CRUCIBLE_PAPER_CAPITAL", "5000"))
+
+
+def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: float = DEFAULT_CAPITAL,
+                    broker: str = os.environ.get("CRUCIBLE_BROKER", "alpaca"),
+                    tif: str = "opg") -> dict:
     _require_target()
     spec = _load_spec(strategy_path)
     name = name or spec.id.replace("-", "_")
@@ -116,7 +123,8 @@ def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: 
     subprocess.run(
         [sys.executable, "-c",
          f"import sys; sys.path.insert(0, {str(ATLAS)!r}); from atlas.execution.providers import deploy_pass; "
-         f"deploy_pass({name!r}, capital={capital}, broker={broker!r}, expectation={exp!r}, strategy_path={strategy_path!r})"],
+         f"deploy_pass({name!r}, capital={capital}, broker={broker!r}, expectation={exp!r}, "
+         f"strategy_path={strategy_path!r}, tif={tif!r})"],
         cwd=str(ATLAS), check=False,
     )
     return {"name": name, "n_positions": len(weights), "expectation": exp, "weights": weights}
@@ -146,7 +154,7 @@ if __name__ == "__main__":
     ap.add_argument("cmd", choices=["deploy", "refresh"])
     ap.add_argument("--path", help="strategy file (for deploy)")
     ap.add_argument("--name")
-    ap.add_argument("--capital", type=float, default=10000.0)
+    ap.add_argument("--capital", type=float, default=DEFAULT_CAPITAL)
     a = ap.parse_args()
     if a.cmd == "deploy":
         print(deploy_to_paper(a.path, name=a.name, capital=a.capital))
