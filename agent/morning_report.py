@@ -203,6 +203,23 @@ def loop_health_section() -> list:
     return lines
 
 
+def notices_section() -> list:
+    """Drain non-critical notices queued by severity routing (sentinel drift, yellow
+    canaries, candidates, forward-track nudges) — the ONE place they reach the human."""
+    from sdk.notify import drain_notices
+    rows = drain_notices()
+    if not rows:
+        return []
+    lines = [f"📥 <b>Notices</b> ({len(rows)} queued since last report)"]
+    for r in rows[-20:]:
+        src = r.get("source", "?")
+        txt = str(r.get("text", "")).replace("\n", " ")[:160]
+        lines.append(f"  [{src}] {txt}")
+    if len(rows) > 20:
+        lines.append(f"  … {len(rows) - 20} more in logs/notices.jsonl (rotated)")
+    return lines
+
+
 def ops_section() -> list:
     lines = []
     if (ROOT / "LOOP_DISABLED").exists():
@@ -227,7 +244,7 @@ def ops_section() -> list:
 
 def main() -> None:
     sections = (forge_section() + [""] + forward_paper_section() + [""]
-                + bab_section() + loop_health_section() + ops_section())
+                + bab_section() + loop_health_section() + notices_section() + ops_section())
     msg = "☀️ <b>Morning report</b> — " + datetime.now().strftime("%a %Y-%m-%d") + "\n\n" \
           + "\n".join(s for s in sections if s is not None)
     ok = all(telegram_msg(part) for part in _split_html(msg))

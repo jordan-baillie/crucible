@@ -97,9 +97,62 @@ def telegram_candidate(spec, verdict: dict) -> bool:
            f"⏳ REQUIRES <b>{needs}</b> before it's a real edge — a single-universe pass "
            f"can be a non-generalising overfit outlier (cf. BAB). NO capital until "
            f"confirmed + human review. See wiki/experiments/{spec.id}.md")
-    return _send(msg, label="🟡 CANDIDATE alert")
+    # Severity routing (2026-06-12): a candidate needs nothing from the human TODAY
+    # (forward-validation runs on its own) -> morning report, not a phone buzz.
+    notice(msg, source="candidate")
+    return True
 
 
 def telegram_msg(text: str) -> bool:
     """Generic message (digest/heartbeat)."""
     return _send(text, label="message")
+
+
+# ── Severity routing (2026-06-12, operator directive: "only alert critical issues") ─────
+# CRITICAL -> immediate Telegram. Everything else -> notices.jsonl, folded into the ONE
+# daily morning report. Critical =
+#   - full-gate PASS (requires human review; rare by design)
+#   - gate-canary BREACH (gate stack rotted; promotions unsafe)
+#   - loop unit death (loop-alert@)
+#   - money-path sentinel failures (holdout-ledger integrity, equity band, forward-paper
+#     dead/failed-steps)
+#   - live execution blocked/error/diverging (atlas daily)
+# Everything else (digests, candidates, yellow canary warnings, data-freshness drift,
+# forward-track nudges) is morning-report material, not a phone buzz.
+
+def telegram_critical(text: str) -> bool:
+    """Immediate Telegram — reserve for events needing same-day human attention."""
+    return _send(text, label="CRITICAL alert")
+
+
+def notice(text: str, source: str = "?") -> None:
+    """Non-critical notice -> logs/notices.jsonl; the morning report drains the file
+    into its 📥 section. Never sends Telegram."""
+    import datetime
+    from crucible_paths import ROOT
+    p = ROOT / "logs" / "notices.jsonl"
+    p.parent.mkdir(exist_ok=True)
+    with open(p, "a") as f:
+        f.write(json.dumps({"ts": datetime.datetime.now().isoformat(timespec="seconds"),
+                            "source": source, "text": text}) + "\n")
+    print(f"[notify] notice queued for morning report ({source})")
+
+
+def drain_notices() -> list:
+    """Read + clear the notices file (morning report only). Drained rows are appended
+    to notices-archive.jsonl so nothing is ever lost to truncation."""
+    from crucible_paths import ROOT
+    p = ROOT / "logs" / "notices.jsonl"
+    if not p.exists():
+        return []
+    txt = p.read_text()
+    rows = []
+    for l in txt.splitlines():
+        try:
+            rows.append(json.loads(l))
+        except json.JSONDecodeError:
+            pass
+    with open(p.parent / "notices-archive.jsonl", "a") as f:
+        f.write(txt if txt.endswith("\n") or not txt else txt + "\n")
+    p.unlink()
+    return rows

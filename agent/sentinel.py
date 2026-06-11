@@ -214,9 +214,21 @@ def main() -> int:
     if failures:
         for f in failures:
             print(f"[sentinel] FAIL {f}")
-        from sdk.notify import telegram_msg
-        telegram_msg("🛰 <b>Data-integrity sentinel</b> — " + stamp + "\n"
-                     + "\n".join("❌ " + f for f in failures))
+        # Severity routing (operator directive: critical-only Telegram).
+        # CRITICAL = money-path: forward-paper book dead/insane/failed-steps (S4/S5/S11),
+        # write-once holdout integrity (S9). Everything else (data freshness, backup lag,
+        # queue starvation, registry drift) waits for the morning report.
+        crit_tags = ("S4 ", "S5 ", "S9 ", "S11 ")
+        crit = [f for f in failures if f.startswith(crit_tags) or "crashed" in f]
+        rest = [f for f in failures if f not in crit]
+        if crit:
+            from sdk.notify import telegram_critical
+            telegram_critical("🛰 <b>Sentinel — CRITICAL</b> — " + stamp + "\n"
+                              + "\n".join("❌ " + f for f in crit))
+        if rest:
+            from sdk.notify import notice
+            for f in rest:
+                notice("❌ " + f, source="sentinel")
         return 1
     print(f"[sentinel] {stamp}: all {len(CHECKS)} checks green")
     return 0

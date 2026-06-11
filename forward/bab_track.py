@@ -58,12 +58,13 @@ def track():
         f.write(json.dumps(rec) + "\n")
     print(f"[bab-forward] {rec['fwd_days']}d forward | Sharpe {rec['fwd_sharpe']} | "
           f"cum {rec['fwd_cum_return']:.2%} | last data {rec['last_data']} | verdict {VERDICT_DATE}")
-    # Telegram nudge once we have a month of forward data
+    # Forward-track update is morning-report material, never a phone buzz (2026-06-12).
     if rec["fwd_days"] >= 21 and rec["fwd_sharpe"] is not None:
         try:
-            from sdk.notify import telegram_msg
-            telegram_msg(f"📈 BAB forward-track: {rec['fwd_days']}d, Sharpe {rec['fwd_sharpe']}, "
-                         f"cum {rec['fwd_cum_return']:.1%} (backtest 1.22 / holdout 0.80). Verdict {VERDICT_DATE}.")
+            from sdk.notify import notice
+            notice(f"📈 BAB forward-track: {rec['fwd_days']}d, Sharpe {rec['fwd_sharpe']}, "
+                   f"cum {rec['fwd_cum_return']:.1%} (backtest 1.22 / holdout 0.80). Verdict {VERDICT_DATE}.",
+                   source="bab-forward")
         except Exception:
             pass
     return rec

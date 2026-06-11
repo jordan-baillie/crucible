@@ -287,17 +287,21 @@ def main() -> int:
         print(f"[canary] {flag:9s} {r['id']:28s} gate={r['gate']:22s} tier={r['tier']} "
               f"{r['note']}")
 
-    if red or yellow:
-        from sdk.notify import telegram_msg
-        lines = ["🐤 <b>Gate canary report</b>"]
+    # Severity routing: a BREACH (known-bad strategy passed the rails) is CRITICAL —
+    # promotions are unsafe until investigated. Yellow (canary died at the wrong gate —
+    # designated gate untested) is morning-report material, not a phone buzz.
+    if red:
+        from sdk.notify import telegram_critical
+        lines = ["🚨 <b>GATE BREACH</b> — halt promotions until investigated"]
         for r in red:
-            lines.append(f"🚨 <b>GATE BREACH</b>: known-bad <code>{r['id']}</code> PASSED ALL "
-                         f"GATES — the <b>{r['gate']}</b> gate has rotted. Halt promotions "
-                         f"until investigated.")
+            lines.append(f"known-bad <code>{r['id']}</code> PASSED ALL GATES — "
+                         f"the <b>{r['gate']}</b> gate has rotted.")
+        telegram_critical("\n".join(lines))
+    if yellow:
+        from sdk.notify import notice
         for r in yellow:
-            lines.append(f"⚠️ <code>{r['id']}</code> blocked before its designated gate "
-                         f"(<b>{r['gate']}</b> untested this run): {r['note'] or r['tier']}")
-        telegram_msg("\n".join(lines))
+            notice(f"canary <code>{r['id']}</code> blocked before its designated gate "
+                   f"({r['gate']} untested this run): {r['note'] or r['tier']}", source="canary")
     else:
         print(f"[canary] all {len(results)} canaries killed by their designated gates — stack healthy")
     return 1 if red else 0
