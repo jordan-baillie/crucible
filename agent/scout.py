@@ -16,7 +16,7 @@ def _read(p):
 
 
 def _pi(prompt):
-    return _llm_call(prompt, timeout=480)
+    return _llm_call(prompt, timeout=900)  # Fable-5 turns run long; match agent.llm default (2026-06-12)
 
 
 def _brave(query, n=5):
