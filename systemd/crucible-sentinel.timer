@@ -1,0 +1,7 @@
+[Unit]
+Description=Daily Crucible data-integrity sentinel (07:30, after the 07:00 morning report)
+[Timer]
+OnCalendar=*-*-* 07:30:00
+Persistent=true
+[Install]
+WantedBy=timers.target

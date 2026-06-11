@@ -1,0 +1,7 @@
+[Unit]
+Description=Weekly Crucible gate canary (Sundays 05:00, after the 04:30 lint)
+[Timer]
+OnCalendar=Sun *-*-* 05:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target

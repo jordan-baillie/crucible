@@ -1,0 +1,12 @@
+[Unit]
+Description=Crucible gate canary (known-bad battery; alert if any gate has rotted)
+[Service]
+Type=oneshot
+WorkingDirectory=/root/crucible
+Environment=HOME=/root
+ExecStart=/bin/bash -lc 'python3 -m agent.canary'
+TimeoutStartSec=3600
+StandardOutput=append:/tmp/crucible_canary.log
+StandardError=append:/tmp/crucible_canary.log
+[Install]
+WantedBy=multi-user.target
