@@ -1,0 +1,173 @@
+#!/usr/bin/env python3
+"""Forward-paper evidence accumulator (LOOPS_FRAMEWORK_PLAN 2.3).
+
+Weekly loop: score every deployed forward book against the board's pre-registered
+go-live gate (memo 2026-06-09-forge-go-live-policy), write the verdict to the wiki,
+and queue a trajectory notice for the morning report. Telegram-critical ONLY if the
+gate flips to PASS (capital decision needs the human) — everything else is report
+material.
+
+Gate criteria (pre-registered, frozen here — do not tune to make the book pass):
+  G1  fills        >= 40 executed orders
+  G2  days         >= 20 trading days of recorded returns
+  G3  expectancy   mean daily net return > 0
+  G4  regimes      >= 2 market regimes covered, each with >= 5 trading days.
+                   Regime def (pre-registered 2026-06-11): sign of IWM trailing
+                   21-day return on each forward date (up / down market).
+  G5  reconciliation  book.json positions == broker positions (within 0.5%)
+                   — checked daily by the shadow loop; here we assert no
+                   'blocked' run rows (a mismatch halts and records blocked).
+  DATA-GAPPED (tracked, not yet scoreable — needs fill-vs-decision prices):
+  G6  slippage     <= 2x modeled   |  G7 broker-error rate < 1%
+
+State: wiki forward/<book>.md (trajectory table appended weekly).
+Usage: python3 forward/evidence.py [--book val_mom_trend_smallcap]
+"""
+from __future__ import annotations
+
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from crucible_paths import WIKI  # noqa: E402
+
+LIVE = Path("/root/atlas/data/live")
+MIN_FILLS = 40
+MIN_DAYS = 20
+MIN_REGIME_DAYS = 5
+
+
+def _jsonl(p: Path) -> list:
+    if not p.exists():
+        return []
+    return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+
+
+def _iwm_regimes(dates: list[str]) -> dict[str, str]:
+    """Regime per forward date: sign of IWM trailing 21d return (pre-registered def)."""
+    import pandas as pd
+    # IWM is an ETF — absent from Sharadar SEP (stocks only). yfinance is fine here:
+    # the survivorship anti-pattern is about cross-sectional stock selection, not a
+    # single index ETF used as a regime flag.
+    from sdk.adapters import yf_panel
+    panel = yf_panel(["IWM"], start="2025-06-01")
+    px = panel["IWM"].dropna().sort_index()
+    trail = px.pct_change(21)
+    out = {}
+    for d in dates:
+        ts = pd.Timestamp(d)
+        if ts in trail.index and pd.notna(trail.loc[ts]):
+            out[d] = "up" if trail.loc[ts] > 0 else "down"
+        else:  # date beyond cached data (e.g. today) — use last known trailing value
+            prior = trail.loc[:ts].dropna()
+            out[d] = ("up" if prior.iloc[-1] > 0 else "down") if len(prior) else "?"
+    return out
+
+
+def evaluate(book: str) -> dict:
+    d = LIVE / book
+    returns = _jsonl(d / "returns.jsonl")
+    runs = _jsonl(d / "runs.jsonl")
+
+    n_days = len(returns)
+    n_fills = sum(len(r.get("orders") or []) for r in runs if not r.get("dry_run"))
+    rets = [float(r["ret"]) for r in returns if r.get("ret") is not None]
+    expectancy = sum(rets) / len(rets) if rets else None
+    blocked = [r for r in runs if r.get("blocked")]
+
+    dates = [r["date"] for r in returns]
+    try:
+        regs = _iwm_regimes(dates)
+        counts: dict[str, int] = {}
+        for v in regs.values():
+            counts[v] = counts.get(v, 0) + 1
+        regimes_covered = sum(1 for k, c in counts.items() if k != "?" and c >= MIN_REGIME_DAYS)
+        regime_detail = counts
+    except Exception as e:
+        regimes_covered, regime_detail = None, {"error": str(e)[:80]}
+
+    gates = {
+        "G1_fills": {"value": n_fills, "need": MIN_FILLS, "pass": n_fills >= MIN_FILLS},
+        "G2_days": {"value": n_days, "need": MIN_DAYS, "pass": n_days >= MIN_DAYS},
+        "G3_expectancy": {"value": round(expectancy, 6) if expectancy is not None else None,
+                          "need": "> 0", "pass": bool(expectancy and expectancy > 0)},
+        "G4_regimes": {"value": regimes_covered, "detail": regime_detail, "need": 2,
+                       "pass": bool(regimes_covered and regimes_covered >= 2)},
+        "G5_reconciliation": {"value": len(blocked), "need": "0 blocked runs",
+                              "pass": not blocked},
+        "G6_slippage": {"value": None, "need": "<= 2x modeled", "pass": None,
+                        "note": "DATA-GAPPED: needs fill-vs-decision prices"},
+        "G7_broker_errors": {"value": None, "need": "< 1%", "pass": None,
+                             "note": "DATA-GAPPED: needs broker error log"},
+    }
+    scoreable = [g for g in gates.values() if g["pass"] is not None]
+    verdict = "PASS" if all(g["pass"] for g in scoreable) and len(scoreable) >= 5 else "ACCUMULATING"
+    return {"book": book, "asof": datetime.now().strftime("%Y-%m-%d"),
+            "verdict": verdict, "gates": gates,
+            "equity": (returns[-1].get("equity") if returns else None)}
+
+
+def write_wiki(ev: dict) -> Path:
+    page = WIKI / "forward" / f"{ev['book']}.md"
+    page.parent.mkdir(exist_ok=True)
+    if not page.exists():
+        page.write_text(
+            f"# Forward-paper evidence — {ev['book']}\n\n"
+            "Board go-live gate ([[2026-06-09 forge-go-live-policy]]): >=40 fills, >=20 days, "
+            "+ve net expectancy, >=2 regimes (IWM trailing-21d sign, pre-registered "
+            "2026-06-11), clean reconciliation; slippage/broker-error gates pending fill "
+            "data. Real capital additionally needs the AUM floor + human approval.\n\n"
+            "| asof | verdict | fills | days | expectancy | regimes | recon | equity |\n"
+            "|---|---|---|---|---|---|---|---|\n")
+    g = ev["gates"]
+
+    def _m(key):
+        v = g[key]
+        mark = "?" if v["pass"] is None else ("✅" if v["pass"] else "✗")
+        return f"{v['value']} {mark}"
+
+    exp = g["G3_expectancy"]["value"]
+    row = (f"| {ev['asof']} | {ev['verdict']} | {_m('G1_fills')} | {_m('G2_days')} | "
+           f"{f'{exp * 1e4:+.1f}bps' if exp is not None else '?'} "
+           f"{'✅' if g['G3_expectancy']['pass'] else '✗'} | "
+           f"{_m('G4_regimes')} | {_m('G5_reconciliation')} | "
+           f"${ev['equity']:,.0f} |\n" if ev.get("equity") else "n/a |\n")
+    with page.open("a") as f:
+        f.write(row)
+    return page
+
+
+def main() -> int:
+    books = [p.name for p in LIVE.iterdir()
+             if (p / "returns.jsonl").exists()] if LIVE.exists() else []
+    if not books:
+        print("[evidence] no forward books found")
+        return 0
+    for book in books:
+        ev = evaluate(book)
+        page = write_wiki(ev)
+        g = ev["gates"]
+        traj = (f"📋 forward-evidence {book}: {ev['verdict']} — "
+                f"fills {g['G1_fills']['value']}/{MIN_FILLS}, days {g['G2_days']['value']}/{MIN_DAYS}, "
+                f"expectancy {f'{g['G3_expectancy']['value'] * 1e4:+.1f}bps' if g['G3_expectancy']['value'] is not None else '?'}, "
+                f"regimes {g['G4_regimes']['value']}/2, recon {'clean' if g['G5_reconciliation']['pass'] else 'BLOCKED RUNS'}")
+        print("[evidence]", traj)
+        try:
+            if ev["verdict"] == "PASS":
+                from sdk.notify import telegram_critical
+                telegram_critical(f"🟢 <b>Go-live gate PASS</b> — {book} cleared all scoreable "
+                                  f"forward-paper criteria.\n{traj}\nCapital decision requires "
+                                  f"human + AUM floor check (memo 2026-06-09). "
+                                  f"See wiki/forward/{book}.md")
+            else:
+                from sdk.notify import notice
+                notice(traj, source="forward-evidence")
+        except Exception as e:
+            print(f"[evidence] notify failed: {e}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

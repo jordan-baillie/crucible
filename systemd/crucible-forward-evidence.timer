@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly forward-evidence scoring (Fri evening, after the week's last shadow cycle)
+
+[Timer]
+OnCalendar=Fri 18:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
