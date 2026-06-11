@@ -107,6 +107,27 @@ def orphans():
     return sorted(p for p in pages if p not in linked and p not in spine)[:15]
 
 
+def permission_audit_reminder() -> str | None:
+    """Security tax (plan 1.4b): every 30 days, remind the human to re-audit credential
+    scope (Alpaca keys, GitHub deploy key, Telegram bot). State = .registry/last_permission_audit
+    (a date string, updated BY THE HUMAN after doing the audit). Routed as a morning-report
+    notice, not a phone buzz."""
+    marker = WIKI / ".registry" / "last_permission_audit"
+    if not marker.exists():
+        marker.parent.mkdir(exist_ok=True)
+        marker.write_text(f"{datetime.now():%Y-%m-%d} (seeded by lint — do a real audit and update)\n")
+        return None
+    try:
+        last = datetime.strptime(marker.read_text()[:10], "%Y-%m-%d")
+    except ValueError:
+        return f"⚠️ permission-audit marker unparseable ({marker})"
+    days = (datetime.now() - last).days
+    if days >= 30:
+        return (f"🔐 permission re-audit due: {days}d since last — check Alpaca key scope, "
+                f"GitHub deploy-key scope, Telegram bot perms; then update {marker.name}")
+    return None
+
+
 def lint():
     a, d = cap_log(), prune_candidates()
     n_arch, n_logs = archive_strategies(), prune_forge_logs()
@@ -122,6 +143,14 @@ def lint():
           f"archived {n_arch} old strategy modules | pruned {n_logs} old forge logs | "
           f"pruned {n_elite_pruned} closed-family elites")
     print(f"[lint] health: {nexp} experiments | {nreg} registry rows | {npages} pages | {nelite} elite | orphans {orph}")
+    reminder = permission_audit_reminder()
+    if reminder:
+        print(f"[lint] {reminder}")
+        try:
+            from sdk.notify import notice
+            notice(reminder, source="lint")
+        except Exception:
+            pass  # reminder is best-effort; lint's pruning work must not fail on it
     with (WIKI / "log.md").open("a") as f:
         f.write(f"\n## [{datetime.now():%Y-%m-%d}] lint | archived {a} log, pruned {d} candidates | "
                 f"{nexp} exp, {nreg} reg, {nelite} elite, {len(orph)} orphans")

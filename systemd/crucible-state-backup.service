@@ -10,5 +10,8 @@ Environment=HOME=/root
 # forge's accumulated evidence; live/ has the forward-paper track record. 14 dated tarballs kept.
 ExecStart=/bin/bash -c 'set -e; D=/root/backups/research-state; mkdir -p $D; tar czf $D/state-$(date +%%Y-%%m-%%d).tar.gz /root/research-wiki /root/crucible/agent/run_log.jsonl /root/crucible/forward/bab_ledger.jsonl /root/atlas/data/live 2>/dev/null; ls -t $D/state-*.tar.gz | tail -n +15 | xargs -r rm'
 # Off-box: auto-commit + push the wiki to the private remote (github.com/jordan-245/research-wiki).
-# '|| true' on push: a network blip must not fail the tarball backup that already succeeded above.
-ExecStart=/bin/bash -c 'cd /root/research-wiki; git add -A; git -c user.name=crucible-backup -c user.email=crucible@local commit -q -m "nightly snapshot $(date +%%F)" || true; git push -q origin master || true'
+# SECURITY TAX (plan 1.4a): secret-scan gates the push, FAIL CLOSED — any hit (or scanner crash)
+# blocks the push and fails the unit -> loop-alert@ fires (critical: leak attempt + off-box memory
+# stale). The local commit still happens so nothing is lost while we investigate.
+# '|| true' on push only: a network blip must not fail the tarball backup that already succeeded.
+ExecStart=/bin/bash -c 'cd /root/research-wiki; git add -A; git -c user.name=crucible-backup -c user.email=crucible@local commit -q -m "nightly snapshot $(date +%%F)" || true; python3 /root/crucible/ops/secret_scan.py /root/research-wiki && { git push -q origin master || true; }'
