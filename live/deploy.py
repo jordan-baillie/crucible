@@ -26,6 +26,13 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# Script-mode safety: `python3 live/deploy.py` puts live/ (not the repo root) on sys.path,
+# so `crucible_paths` wouldn't resolve — this broke the first automated forward-paper run
+# (2026-06-10 23:45, 'weight refresh FAILED'). Make the import work from any caller.
+_REPO = str(Path(__file__).resolve().parents[1])
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+
 from crucible_paths import DEPLOY_TARGET as ATLAS
 ATLAS_LIVE = (ATLAS / "data" / "live") if ATLAS else None
 HEPH = Path(__file__).resolve().parents[1]
