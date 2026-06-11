@@ -9,17 +9,25 @@ import subprocess
 from agent.config import pi_cmd
 
 
-def call(prompt: str, timeout: int = 420) -> str:
+def call(prompt: str, timeout: int = 900) -> str:
     """One pi CLI call -> assistant text. Salvages partial output on timeout
     (long generations are still usually complete when the stream is cut).
-    420s default: Fable-5 measured 285s on a real propose (2026-06-10)."""
+    900s default: Fable-5 codegen measured 154-367s over 18 production runs
+    (2026-06-10/11) and Anthropic's Fable-5 guide says individual turns run
+    longer by default — the old 420s left ~50s headroom on the slowest run and
+    the salvage path was silently converting near-timeouts into truncated code
+    (-> false consistency failures -> wasted fix() calls)."""
     try:
         r = subprocess.run(pi_cmd(), input=prompt, capture_output=True, text=True,
                            timeout=timeout)
         return assistant_text(r.stdout)
     except subprocess.TimeoutExpired as e:
         out = e.stdout.decode() if isinstance(e.stdout, (bytes, bytearray)) else (e.stdout or "")
-        return assistant_text(out)
+        text = assistant_text(out)
+        # Salvage is a degraded path, not success — say so in the unit log so a
+        # truncation seen downstream is attributable to the timeout, not the model.
+        print(f"[llm] TIMEOUT at {timeout}s — salvaged {len(text)} chars of partial output", flush=True)
+        return text
 
 
 def assistant_text(stream: str) -> str:
