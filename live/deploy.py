@@ -2,7 +2,7 @@
 
 DEPLOY CONTRACT (what a target directory must provide — Atlas is the reference implementation):
   1. ``<target>/data/live/<name>/target.json``   — we WRITE today's target weights here
-  2. ``<target>/live/providers.py::deploy_pass(name, *, capital, broker, expectation, strategy_path)``
+  2. ``atlas.execution.providers.deploy_pass(name, *, capital, broker, expectation, strategy_path)`` in <target>
      — we CALL this to register the strategy with the host's daily paper loop
   3. ``<target>/config/live_strategies.json``    — we READ the registry for refresh_all()
 Set CRUCIBLE_DEPLOY to point at any host implementing this contract, or "" to disable deployment
@@ -108,7 +108,7 @@ def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: 
     write_target(name, weights, strategy_path)
     subprocess.run(
         [sys.executable, "-c",
-         f"import sys; sys.path.insert(0, {str(ATLAS)!r}); from live.providers import deploy_pass; "
+         f"import sys; sys.path.insert(0, {str(ATLAS)!r}); from atlas.execution.providers import deploy_pass; "
          f"deploy_pass({name!r}, capital={capital}, broker={broker!r}, expectation={exp!r}, strategy_path={strategy_path!r})"],
         cwd=str(ATLAS), check=False,
     )
