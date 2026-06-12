@@ -81,6 +81,19 @@ def _fmt_diag(d) -> str:
     return "\n".join(lines) or "- n/a"
 
 
+def _fmt_regime(split, cov) -> str:
+    """One public line per pre-reg Parts A+B: the split result AND ledger-gate evaluability —
+    a not_evaluated must be visible on the page, never a silent pass."""
+    if not isinstance(split, dict):
+        return "n/a (pre-burner verdict)"
+    a = (f"calm={split.get('sharpe_calm')} turbulent={split.get('sharpe_turbulent')} "
+         f"PASS={split.get('pass')}" if split.get("evaluated") else (split.get("reason") or "not_evaluated"))
+    c = cov or {}
+    b = (f"ledger regime coverage {c.get('coverage')}" + ("" if c.get("ok") else f" — {c.get('note')}")
+         if c.get("coverage") is not None else "ledger coverage n/a")
+    return f"{a} | {b}"
+
+
 def write_experiment(spec, verdict: dict):
     status = ("VALIDATED" if verdict["PASSED_ALL_GATES"]
               else "REJECTED-MCPT" if verdict.get("stage1_pass") and verdict.get("mcpt_pass") is False
@@ -124,6 +137,7 @@ generated_by: crucible-agent
 - search Sharpe {verdict['search_sharpe']} -> holdout Sharpe {verdict['holdout_sharpe']} | **holdout_gate PASS={verdict['holdout_pass']}** {verdict['holdout_reasons']}
 - deployment passed={verdict['deployment_passed']} peak={verdict['deploy_peak']} sectors={verdict['deploy_sectors']} {verdict['deploy_reasons']}
 - full Sharpe {verdict['full_sharpe']} | maxDD {verdict['full_maxdd']} | trades {verdict['n_trades']}
+- regime burner (pre-reg 2026-06-12): {_fmt_regime(verdict.get('regime_split'), verdict.get('regime_coverage'))}
 - stage-1 pass: {verdict.get('stage1_pass')} | scope: {verdict.get('scope')}
 - stage-2 MCPT: pass={verdict.get('mcpt_pass')} {verdict.get('mcpt') or ''}
 - stage-2 generalization: {verdict.get('generalization')} — {verdict.get('generalization_note') or 'n/a'}

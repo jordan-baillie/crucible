@@ -52,6 +52,9 @@ lookahead bug the harness can't see; the ONLY novel code in your module is the s
 - trades_from_weights(W, rets, sector_map) -> the CONTRACT trade ledger (run-length per held name),
   auto-stamping each trade's entry_regime (bull/bear x calm/vol, trailing-data-only) — the cross-regime
   robustness gates depend on it. Never write entry_regime yourself; the kit's labeller is the standard.
+  MANDATORY: regime stamping is part of the contract — a ledger whose trades lack real entry_regime
+  labels (<80% coverage) has its regime gates recorded as NOT EVALUATED and (from 2026-06-26) is
+  DEMOTED outright (pre-reg 2026-06-12). Building trades any other way will fail the rails.
 - market_regime(rets) -> the per-date regime label Series, if you need it for a regime FILTER in the
   signal itself (it is shift(1)-lagged — safe to act on same-day).
 - pit_panel(sf1_df, field, dates, tickers) -> point-in-time fundamental panel (datekey-based, ffilled;

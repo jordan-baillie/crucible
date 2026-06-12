@@ -117,6 +117,60 @@ def _price_matrix(panel):
     return None
 
 
+# --- Stage 2a regime burner (PRE-REGISTERED 2026-06-12: research-wiki/methodology/prereg-regime-burner.md;
+#     FROZEN — do not tune. Parts A+B below; Part C is scripts/retro_regime_audit.py, report-only.) ---
+REGIME_VOL_LB = 200          # frozen: trailing realized-vol lookback (days)
+REGIME_MIN_OBS = 120         # frozen: evaluability guard — labeled obs required PER HALF
+REGIME_COVERAGE_FLOOR = 0.80 # frozen Part B: ledger entry_regime coverage below this = not evaluated
+REGIME_COVERAGE_DEMOTES_FROM = "2026-06-26"  # frozen Part B phase-in end (14 days post-implementation)
+
+
+def _regime_split(search_ret, price_mx):
+    """Part A: calm/turbulent vol-half split of the SEARCH window (holdout never touched).
+    Returns {evaluated, pass, sharpe_calm, sharpe_turbulent, n_calm, n_turbulent, reason}."""
+    out = {"evaluated": False, "pass": None, "sharpe_calm": None, "sharpe_turbulent": None,
+           "n_calm": 0, "n_turbulent": 0, "reason": None}
+    if price_mx is None:
+        out["reason"] = "not_evaluated (no price panel for market proxy)"
+        return out
+    try:
+        r = pd.Series(search_ret).dropna()
+        mkt = price_mx.pct_change().mean(axis=1).reindex(r.index)  # equal-weight panel proxy, search window
+        vol = mkt.rolling(REGIME_VOL_LB, min_periods=REGIME_VOL_LB // 2).std()
+        vol_med = vol.expanding(min_periods=REGIME_VOL_LB).median()  # expanding: no full-sample lookahead
+        v, m = vol.shift(1), vol_med.shift(1)                        # labels known at the prior close
+        known = v.notna() & m.notna()
+        turb = r[known & (v > m)]
+        calm = r[known & (v <= m)]
+        out["n_calm"], out["n_turbulent"] = len(calm), len(turb)
+        if len(calm) < REGIME_MIN_OBS or len(turb) < REGIME_MIN_OBS:
+            out["reason"] = (f"not_evaluated (calm={len(calm)}, turbulent={len(turb)} labeled obs; "
+                             f"need >={REGIME_MIN_OBS} each)")
+            return out
+        sc, st = _sharpe(calm), _sharpe(turb)
+        out.update({"evaluated": True, "sharpe_calm": round(float(sc), 3),
+                    "sharpe_turbulent": round(float(st), 3), "pass": bool(sc >= 0.0 and st >= 0.0)})
+        return out
+    except Exception as e:
+        out["reason"] = f"not_evaluated (error: {type(e).__name__}: {str(e)[:120]})"
+        return out
+
+
+def _regime_coverage(search_trades) -> dict:
+    """Part B: fraction of search-window trades carrying a real entry_regime stamp. All-'?' ledgers
+    made the three ledger regime gates pass VACUOUSLY (verified 2026-06-12) — below the floor they
+    are recorded as not_evaluated, and from REGIME_COVERAGE_DEMOTES_FROM low coverage demotes."""
+    n = len(search_trades or [])
+    if n == 0:
+        return {"coverage": None, "ok": False, "note": "no search-window trades"}
+    stamped = sum(1 for t in search_trades if str(t.get("entry_regime", "?")) != "?")
+    cov = stamped / n
+    ok = cov >= REGIME_COVERAGE_FLOOR
+    return {"coverage": round(cov, 3), "ok": ok,
+            "note": None if ok else (f"regime gates NOT EVALUATED: only {cov:.0%} of trades carry a "
+                                     f"real entry_regime (floor {REGIME_COVERAGE_FLOOR:.0%})")}
+
+
 def _beta_decomp(search_ret, price_mx):
     """Decompose SEARCH returns into universe-beta + selection-alpha (residual after removing the equal-weight
     universe return). Cheap stage-1 version of MCPT's finding: catches the long-only-beta confound."""
@@ -516,6 +570,10 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     beta_confound = bool(decomp.get("beta_to_universe", 0) > BETA_HI
                          and decomp.get("selection_alpha_sharpe") is not None
                          and decomp["selection_alpha_sharpe"] < SEL_FLOOR)
+    # Stage 2a Part A (pre-registered, frozen): the edge must be non-negative in BOTH vol halves.
+    regime_split = _regime_split(search, _price_matrix(panel))
+    # Stage 2a Part B: were the ledger regime gates even evaluable?
+    regime_cov = _regime_coverage(search_trades)
 
     with FileLock("fdr-registry", ttl=120):
         n_fam = ri.distinct_families(extra=spec.family)
@@ -528,6 +586,18 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             h_reasons = list(h_reasons) + [
                 f"BETA-CONFOUND: beta_to_universe {decomp['beta_to_universe']} + selection-alpha Sharpe "
                 f"{decomp['selection_alpha_sharpe']} < {SEL_FLOOR} -> edge is long-only universe beta, demoted"]
+        # Stage 2a Part A demotion (same mechanics as beta-confound; rule frozen in the pre-reg)
+        if stage1_pass and regime_split["evaluated"] and regime_split["pass"] is False:
+            stage1_pass = False
+            h_reasons = list(h_reasons) + [
+                f"REGIME-FRAGILE: sharpe_calm={regime_split['sharpe_calm']} "
+                f"sharpe_turbulent={regime_split['sharpe_turbulent']} — edge lives in one volatility regime only"]
+        # Stage 2a Part B demotion (phase-in: annotate-only before REGIME_COVERAGE_DEMOTES_FROM)
+        if stage1_pass and not regime_cov["ok"] and \
+                pd.Timestamp.now().strftime("%Y-%m-%d") >= REGIME_COVERAGE_DEMOTES_FROM:
+            stage1_pass = False
+            h_reasons = list(h_reasons) + [
+                f"REGIME-UNSTAMPED: {regime_cov['note']} — ledger regime gates were vacuous, demoted"]
         registry_recorded = True
         try:
             ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": tier,
@@ -588,6 +658,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "n_trades": len(trades),
         "beta_to_universe": decomp.get("beta_to_universe"),
         "selection_alpha_sharpe": decomp.get("selection_alpha_sharpe"), "beta_confound": beta_confound,
+        "regime_split": regime_split, "regime_coverage": regime_cov,
         "stage1_pass": stage1_pass, "confirmed": gen_confirmed, "scope": getattr(spec, "scope", "broad"),
         "mcpt": mcpt_res, "mcpt_pass": mcpt_pass,
         "needs_confirmation": (None if not stage1_pass or passed_all else
