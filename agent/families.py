@@ -9,6 +9,7 @@ import re
 
 _LOW_RISK = ("betting-against", "bab", "low-beta", "low beta", "low-vol", "low vol", "low volatility", "leverage-aversion")
 _PAIRS = [
+    ("illiquidity", ("amihud", "illiquidity", "illiquid", "liquidity premium", "liquidity risk")),
     ("carry", ("carry", "funding rate", "roll yield")),
     ("pead", ("pead", "post-earnings", "earnings-surprise", "earnings surprise", "sue", "drift")),
     ("skew", ("skew", "lottery", "idiosyncratic vol", "max return")),

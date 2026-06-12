@@ -62,6 +62,24 @@ def _run_module(mod_stem: str):
     return (json.loads(m.group(1)) if m else None), (r.stdout + "\n" + r.stderr)
 
 
+def _arm_reward(verdict: dict | None) -> float:
+    """Scalar reward for the proposal arm that produced this run (bandit dataset — Stage 1c).
+    Gate progress, not just pass/fail, so near-misses still inform the arm comparison:
+    0 didn't run/no signal; 0.25 ran clean; +stage1 0.5; +DSR-scaled; 2.0 floor on full pass."""
+    if not verdict:
+        return 0.0
+    r = 0.25
+    if verdict.get("stage1_pass"):
+        r = 0.5
+        try:
+            r += min(max(float(verdict.get("dsr") or 0.0), 0.0), 1.0)
+        except (TypeError, ValueError):
+            pass
+    if verdict.get("PASSED_ALL_GATES"):
+        r = max(r, 2.0)
+    return round(r, 3)
+
+
 def run_one_from_queue():
     if (ROOT / "LOOP_DISABLED").exists():
         print(f"[{AGENT_ID}] LOOP_DISABLED -- halting.")
@@ -140,6 +158,9 @@ def run_one_from_queue():
     else:
         fail_reason = "runtime_error"     # ran out of fix-retries on tracebacks
     outcome = {"schema": 2, "ts": datetime.now().isoformat(), "agent": AGENT_ID,
+               # Stage 1c: arm + verdict-derived reward = the dataset for the (parked) Thompson
+               # bandit over proposal arms. Logged on EVERY outcome; fit only at N>=60.
+               "arm": item.get("arm") or "explore", "arm_reward": _arm_reward(verdict),
                "queue_id": item["id"], "id": sid, "title": prop.get("title"), "proposal": prop,
                "model": _forge_model(), "thinking": os.environ.get("FORGE_THINKING") or None,
                "ran": verdict is not None, "fail_reason": fail_reason,
@@ -155,7 +176,7 @@ def run_one_from_queue():
     queue.complete(item["id"], verdict)
     try:
         from agent import elite
-        elite.record(outcome)  # feed the evolutionary pool (top-K by DSR) for the director to mutate
+        elite.record(outcome)  # feed the MAP-Elites grid (best-per-cell by DSR) for the exploit arms
     except Exception:
         pass
     # Deploy policy (still paper-only, no real capital):

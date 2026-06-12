@@ -61,11 +61,36 @@ Return ONLY a JSON object:
     return obj if obj is not None else {"raw": text[:1500], "error": "parse_failed"}
 
 
+def _ctx() -> str:
+    return ("=== ANTI-PATTERNS (obey) ===\n" + _read("patterns/META-LESSONS.md")[:2000] +
+            "\n\n=== DATA WE OWN ===\n" + _read("DATA_CATALOG.md")[:1500])
+
+
+# The full proposal JSON contract — IDENTICAL for every arm (explore/refine/orthogonal/crossover);
+# the director's gates (dedup, closed-family, theme cap, deployability) apply to all arms identically.
+_CONTRACT_FIELDS = ("title, premium, market, data_source, free_or_owned, signal_approach, "
+                    "why_not_duplicate, prior, pairs_with, gate0_data_check, crowding_risk, "
+                    "retail_tradable_5k, scope, generalization_plan")
+
+_DEPLOYABILITY = ("DEPLOYABILITY: the construction must be retail-tradable at ~$5K (IB/Alpaca; no illiquid "
+                  "short legs — index-hedge instead; no >2x gross leverage; no intraday execution).")
+
+
+def _parent_block(elite: dict, idx: int | None = None) -> str:
+    """Per-parent summary for refine/orthogonal/crossover prompts (QuantaAlpha parent_template,
+    enriched with our gate-stack verdict summary — they only had an IC number)."""
+    s = elite.get("summary") or {}
+    head = f"### PARENT {idx}" if idx else "ELITE STRATEGY"
+    return (f"{head} (fitness/DSR {elite.get('fitness')})\n"
+            f"Verdict summary: holdout_sharpe={s.get('holdout_sharpe')} search_sharpe={s.get('search_sharpe')} "
+            f"n_trades={s.get('n_trades')} scope={s.get('scope')} tier={s.get('tier')}\n"
+            f"Proposal:\n{json.dumps(elite.get('proposal'), indent=2)}")
+
+
 def mutate(elite: dict) -> dict:
-    """EVOLVE an elite near-miss: ONE targeted change to make it more robust / generalise better — keep what
+    """REFINE an elite: ONE targeted change to make it more robust / generalise better — keep what
     worked, fix what's fragile. NOT a fresh idea. Same JSON proposal format. (Evolutionary exploit step.)"""
-    ctx = ("=== ANTI-PATTERNS (obey) ===\n" + _read("patterns/META-LESSONS.md")[:2000] +
-           "\n\n=== DATA WE OWN ===\n" + _read("DATA_CATALOG.md")[:1500])
+    ctx = _ctx()
     prompt = f"""{ctx}
 
 ELITE STRATEGY to EVOLVE (fitness/DSR {elite.get('fitness')}):
@@ -73,13 +98,56 @@ ELITE STRATEGY to EVOLVE (fitness/DSR {elite.get('fitness')}):
 
 Propose ONE targeted MUTATION to make it MORE ROBUST or GENERALISE better — e.g. a different/broader universe,
 a complementary leg, a cleaner/lower-turnover construction, a regime filter, a cost-hardening. Keep what worked;
-fix the fragile part. DEPLOYABILITY: the mutated construction must stay retail-tradable at ~$5K (IB/Alpaca;
-no illiquid short legs, no >2x gross leverage) — mutating TOWARD deployability (e.g. long-only/index-hedged
+fix the fragile part. {_DEPLOYABILITY} Mutating TOWARD deployability (e.g. long-only/index-hedged
 variant) is itself a high-value mutation. This is an EVOLUTION of THIS strategy, NOT a new idea, and must still
-obey the anti-patterns and use owned/free data. Return ONLY the SAME JSON proposal object (title, premium, market, data_source,
-free_or_owned, signal_approach, why_not_duplicate, prior, pairs_with, gate0_data_check, crowding_risk, scope,
-generalization_plan) with the mutation applied (title should note it's a variant)."""
+obey the anti-patterns and use owned/free data. Return ONLY the SAME JSON proposal object ({_CONTRACT_FIELDS})
+with the mutation applied (title should note it's a variant)."""
     obj = extract_json(_llm_call(prompt))
     return obj if obj is not None else {"error": "mutate_parse_failed"}
+
+
+def orthogonal(elite: dict) -> dict:
+    """ORTHOGONAL mutation (QuantaAlpha port, spec tasks/prompt-ports-quantaalpha.md §1): a new hypothesis
+    near-INDEPENDENT of the parent — different mechanism — while exploiting the parent's hard-won knowledge
+    of what data/universes/constructions actually survive our gates."""
+    prompt = f"""{_ctx()}
+
+{_parent_block(elite)}
+
+Propose ONE NEW hypothesis that is ORTHOGONAL to this parent. "Orthogonal" means ALL of:
+1. A completely DIFFERENT market hypothesis / economic mechanism (not a variant, not a refinement)
+2. Different data dimensions or feature types driving the signal
+3. Different investment logic or market perspective
+4. Expected signal correlation to the parent ~0 (different return drivers)
+You are judged on DIFFERENTIATION, not resemblance. DO exploit what the parent's success teaches about
+which data, universes and construction styles survive our gates (e.g. its universe is tradable and clean) —
+but the MECHANISM must be new. Must not duplicate existing experiments, must obey the anti-patterns, must
+use owned/free data. {_DEPLOYABILITY}
+Return ONLY a JSON proposal object ({_CONTRACT_FIELDS}) PLUS one extra field:
+"orthogonality_reason": "why this is near-independent of the parent on the data / logic / horizon / market-state axes"."""
+    obj = extract_json(_llm_call(prompt))
+    return obj if obj is not None else {"error": "orthogonal_parse_failed"}
+
+
+def crossover(elite_a: dict, elite_b: dict) -> dict:
+    """CROSSOVER (QuantaAlpha port, spec §2): hybridize two elites from DIFFERENT families (enforced
+    upstream by elite.sample_pair, not by prompt). The hybrid must have a reason to beat BOTH parents."""
+    prompt = f"""{_ctx()}
+
+{_parent_block(elite_a, 1)}
+
+{_parent_block(elite_b, 2)}
+
+Propose ONE HYBRID strategy that FUSES the validated mechanisms of these two parents (e.g. parent 1's
+signal construction with parent 2's timing/universe edge). Requirements:
+- Identify each parent's STRENGTHS and WEAKNESSES; the hybrid must AVOID weaknesses COMMON to both.
+- The hybrid needs a specific reason to beat BOTH parents (synergy), not just average them.
+- It must be ONE coherent tradable construction, not two books stapled together.
+- Must not duplicate existing experiments, must obey the anti-patterns, owned/free data only. {_DEPLOYABILITY}
+Return ONLY a JSON proposal object ({_CONTRACT_FIELDS}) PLUS two extra fields:
+"fusion_logic": "how the parents' mechanisms combine",
+"expected_benefit_over_parents": "why the hybrid should beat BOTH parents"."""
+    obj = extract_json(_llm_call(prompt))
+    return obj if obj is not None else {"error": "crossover_parse_failed"}
 
 

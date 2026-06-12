@@ -38,8 +38,9 @@ def _write_all(items: list[dict]) -> None:
             tmp.unlink(missing_ok=True)
 
 
-def enqueue(proposal: dict) -> str:
+def enqueue(proposal: dict, arm: str | None = None) -> str:
     item = {"id": uuid.uuid4().hex[:12], "status": "queued", "ts": time.time(),
+            "arm": arm or "explore",  # which proposal arm produced this (bandit dataset, Stage 1c)
             "proposal": proposal, "claimed_by": None, "claimed_at": None}
     with FileLock("queue"):
         items = _read_all()
