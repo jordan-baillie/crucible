@@ -94,13 +94,47 @@ def compute_expectation(net, holdout_start: str = "2022-01-01") -> dict:
             "sharpe": round(float(r.mean() / r.std() * np.sqrt(252)), 3)}
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def _live_lock(timeout: float = 30.0):
+    """flock over <atlas>/data/live/.lock — same contract as atlas.kernel.lockfile.live_lock.
+    DELIBERATELY duplicated (~10 lines) rather than imported across the repo seam
+    (2026-06-12 review: no cross-repo Python imports; the lock FILE is the contract)."""
+    import fcntl
+    import time
+    lock = ATLAS_LIVE / ".lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock, "w")
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"live lock busy > {timeout}s — another writer wedged")
+                time.sleep(0.2)
+        yield
+    finally:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
 def write_target(name: str, weights: dict, strategy_path: str) -> Path:
     _require_target()
     d = ATLAS_LIVE / name
     d.mkdir(parents=True, exist_ok=True)
     f = d / "target.json"
-    f.write_text(json.dumps({"asof": datetime.date.today().isoformat(), "weights": weights,
-                             "strategy_path": strategy_path}, indent=2))
+    tmp = f.with_suffix(".json.tmp")
+    with _live_lock():
+        tmp.write_text(json.dumps({"asof": datetime.date.today().isoformat(), "weights": weights,
+                                   "strategy_path": strategy_path}, indent=2))
+        tmp.replace(f)
     return f
 
 
