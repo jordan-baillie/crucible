@@ -188,6 +188,29 @@ def main() -> int:
         ev = evaluate(book)
         page = write_wiki(ev)
         g = ev["gates"]
+        # Stage 3 lifecycle transitions (pre-reg 2026-06-12: prereg-retirement-rule.md, frozen).
+        # The evidence loop owns all automatic transitions; 'retired' is human-only.
+        try:
+            from forward.lifecycle import evaluate_lifecycle
+            lc = evaluate_lifecycle(book, gates_all_pass=(ev["verdict"] == "PASS"),
+                                    n_days=g["G2_days"]["value"] or 0)
+            ev["lifecycle"] = lc
+            if lc.get("watch"):
+                print(f"[lifecycle] {book}: {lc['watch']}")
+            if lc.get("changed") and lc["lifecycle"] == "decaying":
+                d = lc["decay"] or {}
+                from sdk.notify import telegram_critical
+                telegram_critical(
+                    f"🔻 <b>DECAY rule fired</b> — {book} -> lifecycle=decaying\n"
+                    f"D1: roll-{60}d mean {d.get('roll_mean'):.6f} < 25% of modeled "
+                    f"{d.get('modeled_mean'):.6f} (2 consecutive weekly evals)\n"
+                    f"D2: CUSUM fired (current S > 5.0, peak {d.get('cusum_peak')})\n"
+                    f"Book keeps paper-trading; RETIREMENT is yours to confirm: "
+                    f"python3 -m forward.lifecycle retire {book}")
+            elif lc.get("changed"):
+                print(f"[lifecycle] {book}: -> {lc['lifecycle']}")
+        except Exception as e:
+            print(f"[lifecycle] {book}: evaluation failed: {e}")
         traj = (f"📋 forward-evidence {book}: {ev['verdict']} — "
                 f"fills {g['G1_fills']['value']}/{MIN_FILLS}, days {g['G2_days']['value']}/{MIN_DAYS}, "
                 f"expectancy {f'{g['G3_expectancy']['value'] * 1e4:+.1f}bps' if g['G3_expectancy']['value'] is not None else '?'}, "
