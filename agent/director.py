@@ -38,20 +38,23 @@ def _pick_arm(rng) -> str:
     return "explore"
 
 
-def _propose_via_arm(rng) -> tuple[dict, str]:
-    """THE single arm-selection point. Returns (proposal, arm-actually-used)."""
+def _propose_via_arm(rng) -> tuple[dict, str, list[str]]:
+    """THE single arm-selection point. Returns (proposal, arm-actually-used, parent_ids).
+    parent_ids = elite-pool ids the exploit arms derived from — the EXPLICIT lineage record
+    (research-map graph + retro-analysis); explore has no parents."""
     arm = _pick_arm(rng)
     if arm in ("refine", "orthogonal"):
         e = elite.sample(rng)
         if e is None:
-            return propose(), "explore"  # precondition unmet -> fallback
-        return (propose_mutate(e) if arm == "refine" else propose_orthogonal(e)), arm
+            return propose(), "explore", []  # precondition unmet -> fallback
+        prop = propose_mutate(e) if arm == "refine" else propose_orthogonal(e)
+        return prop, arm, [str(e.get("id"))]
     if arm == "crossover":
         pair = elite.sample_pair(rng)
         if pair is None:
-            return propose(), "explore"  # <2 families in pool -> fallback
-        return propose_crossover(*pair), arm
-    return propose(), "explore"
+            return propose(), "explore", []  # <2 families in pool -> fallback
+        return propose_crossover(*pair), arm, [str(p.get("id")) for p in pair]
+    return propose(), "explore", []
 
 
 def _norm(t: str) -> str:
@@ -99,7 +102,7 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
         for _ in range(min(need, max_new) * 3):  # extra tries to find DIVERSE ideas
             if added >= min(need, max_new):
                 break
-            prop, arm = _propose_via_arm(rng)
+            prop, arm, parent_ids = _propose_via_arm(rng)
             if "error" in prop:
                 continue
             key, th = _norm(prop.get("title", "")), _theme(prop)
@@ -109,7 +112,7 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
                 continue  # DEPLOYABILITY gate (board 2026-06-09): stranded alpha — don't spend a slot+holdout look on it
             if not key or key in tested or key in inflight or themes.get(th, 0) >= 2:
                 continue  # dedup vs recorded experiments + in-flight + theme cluster cap
-            queue.enqueue(prop, arm=arm)
+            queue.enqueue(prop, arm=arm, parent_ids=parent_ids)
             inflight.add(key)
             themes[th] = themes.get(th, 0) + 1
             added += 1

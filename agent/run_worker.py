@@ -169,6 +169,7 @@ def run_one_from_queue():
                # Stage 1c: arm + verdict-derived reward = the dataset for the (parked) Thompson
                # bandit over proposal arms. Logged on EVERY outcome; fit only at N>=60.
                "arm": item.get("arm") or "explore", "arm_reward": _arm_reward(verdict),
+               "parent_ids": item.get("parent_ids") or [],  # explicit lineage (research map),
                "queue_id": item["id"], "id": sid, "title": prop.get("title"), "proposal": prop,
                "model": _forge_model(), "thinking": os.environ.get("FORGE_THINKING") or None,
                "ran": verdict is not None, "fail_reason": fail_reason,

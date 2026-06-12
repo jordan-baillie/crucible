@@ -141,6 +141,29 @@ def test_director_arm_split_and_fallback(pool, monkeypatch):
     assert calls.count("crossover") == labels.count("crossover")
 
 
+def test_propose_via_arm_parent_ids_lineage(pool, monkeypatch):
+    """Exploit arms must record EXPLICIT parent_ids (research-map lineage); explore must not."""
+    elite, p, _ = pool
+    import agent.director as director
+    monkeypatch.setattr(director, "elite", elite)
+    monkeypatch.setattr(director, "propose", lambda: {"title": "x"})
+    monkeypatch.setattr(director, "propose_mutate", lambda e: {"title": "m"})
+    monkeypatch.setattr(director, "propose_orthogonal", lambda e: {"title": "o"})
+    monkeypatch.setattr(director, "propose_crossover", lambda a, b: {"title": "c"})
+    elite.record(_outcome("Amihud illiquidity premium", "US small-cap equities", 1.0))
+    elite.record(_outcome("Carry roll-yield premium", "futures", 0.8))
+    pool_ids = {it["id"] for it in elite._grid(elite._load()).values()}
+    rng = random.Random(11)
+    for _ in range(200):
+        _, arm, parents = director._propose_via_arm(rng)
+        if arm == "explore":
+            assert parents == []
+        elif arm in ("refine", "orthogonal"):
+            assert len(parents) == 1 and set(parents) <= pool_ids
+        else:  # crossover
+            assert len(parents) == 2 and set(parents) <= pool_ids
+
+
 def test_arm_reward_shape():
     from agent.run_worker import _arm_reward
     assert _arm_reward(None) == 0.0

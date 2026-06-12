@@ -38,9 +38,10 @@ def _write_all(items: list[dict]) -> None:
             tmp.unlink(missing_ok=True)
 
 
-def enqueue(proposal: dict, arm: str | None = None) -> str:
+def enqueue(proposal: dict, arm: str | None = None, parent_ids: list[str] | None = None) -> str:
     item = {"id": uuid.uuid4().hex[:12], "status": "queued", "ts": time.time(),
             "arm": arm or "explore",  # which proposal arm produced this (bandit dataset, Stage 1c)
+            "parent_ids": parent_ids or [],  # elite-pool ids the exploit arms derived from (lineage)
             "proposal": proposal, "claimed_by": None, "claimed_at": None}
     with FileLock("queue"):
         items = _read_all()
