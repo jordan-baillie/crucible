@@ -119,6 +119,74 @@ def test_fail_path_completes_with_stable_verdict_keys(tmp_env):
     assert (Path(tmp_env) / "experiments" / "t-fullstack.md").exists()
 
 
+def test_soft_expectations_recorded_and_never_blocking(tmp_env):
+    """Pre-registered soft expectations (tranched_v3 lesson): a FALSIFIED claim and a
+    CRASHING check must both be recorded on the verdict + wiki page, never alter the
+    gate outcome, and never kill the run."""
+    from sdk import harness
+
+    def momo_signal(panel, lookback=60, **_):
+        rets = panel.pct_change()
+        mom = panel.pct_change(lookback)
+        w = mom.clip(-1, 1)
+        w = w.div(w.abs().sum(axis=1), axis=0).shift(1)
+        daily = (w * rets).sum(axis=1)
+        boost = pd.Series(0.0006, index=daily.index)
+        boost[daily.index >= "2024-01-01"] = 0.0
+        return daily + boost, _trades_from(w, panel)
+
+    spec = _make_spec(harness, momo_signal, "t-softexp",
+                      grid={"default": {}, "lb120": {"lookback": 120}})
+    spec.expectations = [
+        {"name": "always_true", "claim": "search Sharpe is finite",
+         "check": lambda ctx: {"pass": bool(np.isfinite(ctx["search"].mean())),
+                               "observed": round(float(ctx["search"].mean()), 6)}},
+        {"name": "falsified_claim", "claim": "search mean return > 100%/day (absurd)",
+         "check": lambda ctx: {"pass": bool(ctx["search"].mean() > 1.0),
+                               "observed": float(ctx["search"].mean())}},
+        {"name": "broken_check", "claim": "this check raises",
+         "check": lambda ctx: (_ for _ in ()).throw(ValueError("boom"))},
+    ]
+    v = harness.run_experiment(spec, write_wiki=True, alert=False)
+
+    soft = v["soft_expectations"]
+    assert soft is not None and len(soft) == 3
+    by = {r["name"]: r for r in soft}
+    assert by["always_true"]["pass"] is True
+    assert by["falsified_claim"]["pass"] is False and by["falsified_claim"]["status"] == "FALSIFIED"
+    assert by["broken_check"]["pass"] is None and by["broken_check"]["status"] == "error"
+    assert v["soft_expectations_pass"] is False
+    # NEVER blocking: gate fields are computed identically (this spec FAILs on merit anyway,
+    # but the schema-level guarantee is that soft results live OUTSIDE the gate booleans).
+    assert isinstance(v["stage1_pass"], bool)
+    assert v["PASSED_ALL_GATES"] in (True, False)
+    page = (Path(tmp_env) / "experiments" / "t-softexp.md").read_text()
+    assert "FALSIFIED" in page and "falsified_claim" in page and "check-error" in page
+
+
+def test_no_expectations_yields_none_not_failure(tmp_env):
+    """Legacy specs (no expectations field) must record soft_expectations=None and a
+    'prose-only' wiki line — not an empty-list false pass."""
+    from sdk import harness
+
+    def momo_signal(panel, lookback=60, **_):
+        rets = panel.pct_change()
+        w = panel.pct_change(lookback).clip(-1, 1)
+        w = w.div(w.abs().sum(axis=1), axis=0).shift(1)
+        daily = (w * rets).sum(axis=1)
+        boost = pd.Series(0.0006, index=daily.index)
+        boost[daily.index >= "2024-01-01"] = 0.0
+        return daily + boost, _trades_from(w, panel)
+
+    v = harness.run_experiment(_make_spec(harness, momo_signal, "t-noexp",
+                                          grid={"default": {}, "lb120": {"lookback": 120}}),
+                               write_wiki=True, alert=False)
+    assert v["soft_expectations"] is None
+    assert v["soft_expectations_pass"] is None
+    page = (Path(tmp_env) / "experiments" / "t-noexp.md").read_text()
+    assert "prose-only" in page
+
+
 def test_registry_append_failure_is_loud(tmp_env, monkeypatch):
     """The shared FDR bar depends on every run being appended. A failed append must
     be flagged in the verdict, never silently swallowed."""

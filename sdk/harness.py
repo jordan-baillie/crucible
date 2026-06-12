@@ -51,6 +51,15 @@ class StrategySpec:
     generalization_universes: list = field(default_factory=list)  # broad scope: untouched universes to confirm the mechanism in
     load_gen_data: Callable = None             # broad scope: label -> panel for each generalization universe (UNTOUCHED; same shape as load_data())
     project: str = "crucible"
+    # PRE-REGISTERED SOFT EXPECTATIONS (2026-06-12, tranched_v3 lesson): machine-checkable
+    # mechanism claims. Each: {"name": str, "claim": str (the bar, human-readable),
+    # "check": Callable[[dict], dict]} where check(ctx) returns {"pass": bool, "observed": ...}.
+    # ctx = {panel, spec, search (Series), trades (search-window ledger), grid (label->search Series),
+    # holdout_start}. SOFT: a fail NEVER blocks (hard gates run at full realized cost) but is
+    # recorded on the verdict + wiki + PASS alert — tranched_v3 shipped with a falsified turnover
+    # story because its prose expectations were never executed. Keep checks bounded (<=1 extra
+    # signal() call); slice anything you recompute to < holdout_start.
+    expectations: list = field(default_factory=list)
 
 
 from sdk.stats import sharpe as _sharpe, maxdd as _maxdd_canon  # canonical (sdk/stats.py)
@@ -351,6 +360,31 @@ def _stage2_generalize(spec: StrategySpec) -> tuple:
     return results, False, f"stage-2 REJECTED: {pos}/{len(vals)} positive OOS ({frac:.0%} < 60%) -> overfit outlier (cf. BAB)"
 
 
+def _run_expectations(spec: StrategySpec, ctx: dict) -> list | None:
+    """Execute the spec's pre-registered soft-expectation checks. Never raises; a check
+    error is recorded as status='error' (loud on the verdict, not a silent skip)."""
+    exps = list(getattr(spec, "expectations", None) or [])
+    if not exps:
+        return None
+    out = []
+    for e in exps:
+        name = str(e.get("name", f"expectation_{len(out)}"))
+        rec = {"name": name, "claim": str(e.get("claim", ""))}
+        try:
+            res = e["check"](ctx)
+            rec["pass"] = bool(res.get("pass"))
+            rec["observed"] = res.get("observed")
+            rec["status"] = "pass" if rec["pass"] else "FALSIFIED"
+        except Exception as ex:  # noqa: BLE001 — a broken check must not kill the verdict
+            rec["pass"] = None
+            rec["status"] = "error"
+            rec["observed"] = f"{type(ex).__name__}: {str(ex)[:200]}"
+        print(f"[expectations] {name}: {rec['status']}"
+              + (f" (observed: {rec['observed']})" if rec["status"] != "pass" else ""))
+        out.append(rec)
+    return out
+
+
 def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     """Run one pre-registered hypothesis through ALL rails. Returns the verdict dict."""
     panel = spec.load_data()
@@ -531,6 +565,14 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
                         "local scope but MCPT FAIL -> construction artifact, NOT deploying to paper")
     passed_all = bool(stage1_pass and mcpt_pass and gen_confirmed)
 
+    # PRE-REGISTERED SOFT EXPECTATIONS: run on every full-rails verdict (NEAR-MISS pages need
+    # mechanism falsification too — reruns inherit the story). Search-window inputs only; a
+    # check that recomputes signal() must slice < holdout_start itself (instructed in codegen).
+    soft = _run_expectations(spec, {"panel": panel, "spec": spec, "search": search,
+                                    "trades": search_trades, "grid": grid,
+                                    "holdout_start": spec.holdout_start})
+    soft_pass = None if soft is None else all(r["pass"] is True for r in soft)
+
     grid_sharpes = {label: round(_sharpe(r), 3) for label, r in grid.items()}
 
     verdict = {
@@ -552,6 +594,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             ("cross-market-generalization" if getattr(spec, "scope", "broad") == "broad" else "forward-validation")),
         "generalization": gen_results, "generalization_note": gen_note,
         "PASSED_ALL_GATES": passed_all, "registry_recorded": registry_recorded,
+        "soft_expectations": soft, "soft_expectations_pass": soft_pass,
         "holdout_burned": holdout_burned, "config_hash": cfg_hash,
         # O1 — reproducibility + gate diagnostics
         **_provenance(spec),

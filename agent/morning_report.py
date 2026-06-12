@@ -68,6 +68,14 @@ def forge_section() -> list:
         # O4/O3: a non-run shows WHY (schema-2 fail_reason), not a bare dash
         why = f" [{r['fail_reason']}]" if (not r.get("ran") and r.get("fail_reason")) else ""
         lines.append(f"  {mark} {tier[:7]:<7} {str(r.get('title', '?'))[:52]}{why}")
+    # falsified pre-registered soft expectations: the mechanism story is wrong even where
+    # the gates hold (tranched_v3 lesson) — surface every one, whatever the tier
+    for r in runs:
+        v = r.get("verdict") or {}
+        soft = v.get("soft_expectations") if isinstance(v, dict) else None
+        bad = [s["name"] for s in (soft or []) if s.get("pass") is not True]
+        if bad:
+            lines.append(f"  ⚠️ soft-exp falsified/error: {str(r.get('title','?'))[:36]} — {', '.join(bad)}")
     # O4: near-misses deserve eyes — they're the director's mutation fuel
     nm = [r for r in runs if isinstance(r.get("verdict"), dict)
           and (r["verdict"].get("dsr") or 0) >= 0.85 and not r.get("passed_all")]

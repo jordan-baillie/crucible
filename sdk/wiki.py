@@ -30,6 +30,21 @@ def _fmt_grid(gs) -> str:
     return " · ".join(f"{k}={v}" for k, v in sorted(gs.items(), key=lambda x: -(x[1] if x[1] is not None else -99)))
 
 
+def _fmt_soft(soft) -> str:
+    """Pre-registered soft expectations: one line each so a falsified mechanism story is
+    visible on every verdict page (tranched_v3 lesson — prose expectations went unchecked)."""
+    if not soft:
+        return "- soft expectations: none machine-declared (prose-only pre-registration)"
+    lines = ["- pre-registered soft expectations "
+             "(mechanism claims — a FALSIFIED line means the story is wrong even if the hard gates hold):"]
+    for r in soft:
+        mark = {"pass": "✓", "FALSIFIED": "✗ FALSIFIED", "error": "⚠ check-error"}.get(r.get("status"), "?")
+        obs = r.get("observed")
+        lines.append(f"  - {mark} **{r.get('name')}** — {r.get('claim')}"
+                     + (f" | observed: {obs}" if obs is not None else ""))
+    return "\n".join(lines)
+
+
 def _fmt_diag(d) -> str:
     """Render the assemble_bundle diagnostics the reviewer needs, compactly."""
     if not d:
@@ -114,6 +129,7 @@ generated_by: crucible-agent
 - stage-2 generalization: {verdict.get('generalization')} — {verdict.get('generalization_note') or 'n/a'}
 - needs_confirmation: {verdict.get('needs_confirmation') or 'none'}
 - **PASSED ALL GATES: {verdict['PASSED_ALL_GATES']}**
+{_fmt_soft(verdict.get('soft_expectations'))}
 
 ## Reproducibility (O1)
 - module: `{verdict.get('module_file') or 'n/a'}` sha1 `{verdict.get('module_sha') or 'n/a'}` | crucible repo `{verdict.get('repo_sha') or 'n/a'}`

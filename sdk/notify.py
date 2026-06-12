@@ -69,6 +69,18 @@ def render_verdict_lines(verdict: dict) -> list:
     return lines
 
 
+def _soft_line(verdict: dict) -> str:
+    """One PASS-alert line for pre-registered soft expectations — a falsified mechanism
+    claim must reach the human WITH the green alert, not wait for a wiki read."""
+    soft = verdict.get("soft_expectations")
+    if not soft:
+        return ""
+    bad = [r["name"] for r in soft if r.get("pass") is not True]
+    if not bad:
+        return f"soft expectations: all {len(soft)} ✓\n"
+    return f"⚠️ SOFT EXPECTATIONS FALSIFIED/ERROR: {', '.join(bad)} (story wrong, gates hold)\n"
+
+
 def telegram_pass(spec, verdict: dict) -> bool:
     """Fires ONLY on a full-gate PASS (rare by design)."""
     body = "\n".join(render_verdict_lines(verdict))
@@ -80,7 +92,8 @@ def telegram_pass(spec, verdict: dict) -> bool:
            f"{_fmt(verdict.get('deploy_sectors'))} sectors)\n"
            f"full Sharpe {_fmt(verdict.get('full_sharpe'))} | "
            f"maxDD {_fmt(verdict.get('full_maxdd'), pct=True)} | "
-           f"{_fmt(verdict.get('n_trades'))} trades\n\n"
+           f"{_fmt(verdict.get('n_trades'))} trades\n"
+           f"{_soft_line(verdict)}\n"
            f"⚠️ Human review required before ANY capital. See wiki/experiments/{spec.id}.md")
     return _send(msg, label="🟢 PASS alert")
 

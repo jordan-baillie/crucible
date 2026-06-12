@@ -15,7 +15,8 @@ no config). It MUST define exactly:
   SPEC = StrategySpec(id=..., family=..., title=..., markets=[...], data_desc=..., pre_registration=...,
                       load_data=load_data, signal=signal, default_params={...}, grid={label:params,...},
                       scope='broad'|'local', generalization_universes=[...], load_gen_data=load_gen_data,
-                      holdout_start="2022-01-01", deploy_max_positions=N)
+                      holdout_start="2022-01-01", deploy_max_positions=N,
+                      expectations=[{"name":..., "claim":..., "check": fn}, ...])  # see SOFT EXPECTATIONS below
 
 CONTRACT:
 - daily_returns: a pandas Series of daily net-of-cost portfolio returns, DatetimeIndex, name set.
@@ -83,6 +84,19 @@ A typical module body is therefore: build universe -> load panels -> compute YOU
   force-fail single_name_share (it killed two otherwise-clean Amihud near-misses on 2026-06-11).
   Whitelist: SPY/IVV/VOO/IWM/MDY/IJH/IJR/QQQ/VTI/ITOT/EFA/EEM/ACWI/TLT/IEF/SHY/GLD/USO/DBC.
   The cap is position-day share; >0.60 is never allowed. The sleeve is part of the FROZEN design.
+- SOFT EXPECTATIONS (MANDATORY when your pre_registration makes a checkable mechanism claim,
+  e.g. "turnover drops 50%", "monotonic across quintiles", "works in all sub-periods"): declare
+  them MACHINE-CHECKABLE on the spec — StrategySpec(expectations=[{"name": "turnover_halved",
+  "claim": "tranched long-leg turnover <= 60% of untranched", "check": my_check_fn}, ...]).
+  Each check(ctx) -> {"pass": bool, "observed": <number/str>}; ctx has panel, spec, search
+  (search-window net returns Series), trades (search-window ledger), grid (label -> search-window
+  returns Series per grid variant), holdout_start. Use ctx["grid"] to compare variants you already
+  declared (free); at most ONE extra signal() call inside a check, and slice anything you recompute
+  to dates < ctx["holdout_start"]. Soft fails do NOT block the gates — they are recorded on the
+  verdict so a wrong mechanism story is falsified instead of shipped (2026-06-12: a PASS shipped
+  claiming tranching halved turnover; retro-check showed it RAISED it 39% — the claim was prose,
+  so nothing ran). A claim you cannot check cheaply belongs in pre_registration prose ONLY if you
+  also say why it is not machine-checkable.
 Be economical and correct. OWNED/FREE data only (see DATA_CATALOG.md). The harness runs ALL the rails; you only produce returns+trades.
 '''
 
