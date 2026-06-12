@@ -105,17 +105,25 @@ def run_one_from_queue():
     verdict, log = None, ""
     # Observability: per-stage wall-clock + retry counters -> run_log.jsonl ("stages" key)
     stages = {"codegen_s": None, "codegen_attempts": None, "consistency_fix": False,
-              "sandbox_rejects": 0, "run_attempts": 0, "backtest_s": None, "total_s": None}
+              "consistency_severity": None, "sandbox_rejects": 0, "run_attempts": 0,
+              "backtest_s": None, "total_s": None}
     t_cycle = time.time()
     try:
         t0 = time.time()
         code = codegen.generate(prop)
-        ok, issues = codegen.consistency_check(prop, code)  # does the code implement the claimed thesis?
-        if not ok and issues:
-            print(f"[{AGENT_ID}] thesis<->code mismatch: {issues[:120]}; requesting fix...")
+        # Stage 4a severity ladder: only major+ costs a repair; minor deviations are logged and kept
+        # (the consistency-fix tail — median 347s vs 211s clean — was dominated by immaterial nits).
+        sev, issues, corrected = codegen.consistency_check(prop, code)
+        stages["consistency_severity"] = sev
+        if sev in codegen.SEVERITY_FIX:
+            print(f"[{AGENT_ID}] thesis<->code mismatch ({sev}): {issues[:120]}; "
+                  + ("corrected in-call" if corrected else "requesting fix..."))
             stages["consistency_fix"] = True
-            code = codegen.fix(code, f"THESIS MISMATCH — the code must FAITHFULLY implement the proposal's "
-                                     f"economic thesis. Fix these mismatches: {issues}")
+            code = corrected or codegen.fix(
+                code, f"THESIS MISMATCH — the code must FAITHFULLY implement the proposal's "
+                      f"economic thesis. Fix these mismatches: {issues}")
+        elif sev == "minor" and issues:
+            print(f"[{AGENT_ID}] consistency minor (kept as-is): {issues[:120]}")
         stages["codegen_s"] = round(time.time() - t0, 1)
         stages["codegen_attempts"] = codegen.LAST_GEN.get("attempts")
         for attempt in range(1, MAX_RETRIES + 1):

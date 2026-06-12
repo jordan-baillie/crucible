@@ -30,6 +30,9 @@ from crucible_paths import ROOT, WIKI  # noqa: E402
 
 RUN_LOG = ROOT / "agent" / "run_log.jsonl"
 STATE = ROOT / "logs" / "triage_state.json"
+# Stage 4b: machine-readable diagnosis log keyed by error_class — codegen.fix() queries it to
+# inject past fail->success pairs into retry prompts (connects the triage and codegen loops).
+TRIAGE_LOG = ROOT / "logs" / "triage_log.jsonl"
 TRIAGE_REASONS = ("runtime_error", "worker_exception")
 MAX_PER_NIGHT = 3
 MAX_SRC_CHARS = 12_000  # per file fed to the LLM
@@ -153,9 +156,11 @@ def triage_one(rec: dict) -> dict:
                            module_name=(mod.name if mod else "?"), module_src=_src(mod),
                            sdk_src=sdk_src)
     from agent.llm import call, extract_json
+    from agent.codegen import error_class
     ans = extract_json(call(prompt, timeout=600)) or {}
     result = {"id": rec.get("id"), "queue_id": rec.get("queue_id"),
               "title": rec.get("title"), "ts": rec.get("ts"),
+              "error_class": error_class(rec.get("log_tail") or ""),
               "root_cause": ans.get("root_cause", "(no diagnosis returned)"),
               "location": ans.get("location", "?"),
               "fix_summary": ans.get("fix_summary"), "branch": None, "branch_status": None}
@@ -221,6 +226,14 @@ def main() -> int:
         done.add((rec.get("ts"), rec.get("id")))
     _save_state(done)
     _wiki_note(results)
+    # Stage 4b: append machine-readable rows for codegen's fail->success memory
+    TRIAGE_LOG.parent.mkdir(exist_ok=True)
+    with TRIAGE_LOG.open("a") as f:
+        for r in results:
+            f.write(json.dumps({"ts": datetime.now().isoformat(timespec="seconds"),
+                                "error_class": r.get("error_class"), "location": r.get("location"),
+                                "root_cause": r.get("root_cause"), "fix_summary": r.get("fix_summary"),
+                                "title": r.get("title"), "queue_id": r.get("queue_id")}) + "\n")
     try:
         from sdk.notify import notice
         for r in results:

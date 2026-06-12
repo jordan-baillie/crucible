@@ -1,6 +1,7 @@
 """Signal codegen: the agent writes a complete StrategySpec module from its proposal,
 with a bounded fix-retry loop (reads the traceback, repairs the code). LLM via the pi CLI."""
 import json, re
+from pathlib import Path
 from agent.llm import call as _llm_call, extract_json
 
 CONTRACT = '''
@@ -136,24 +137,82 @@ def generate(proposal: dict) -> str:
     return code  # if still incomplete after 3, the run-loop fix() repairs
 
 
+def error_class(traceback: str) -> str:
+    """Coarse error class for the fail->success memory (Stage 4b): exception type + the failing
+    sdk/agent module if one appears in the traceback. Shared with agent.triage."""
+    tb = traceback or ""
+    exc = None
+    for m in re.finditer(r"^(\w+(?:Error|Exception|Warning))\b", tb, re.MULTILINE):
+        exc = m.group(1)
+    exc = exc or ("SANDBOX" if "SANDBOX" in tb else "THESIS_MISMATCH" if "THESIS MISMATCH" in tb else "unknown")
+    mods = re.findall(r'File "/root/crucible/(sdk|agent)/([\w]+)\.py"', tb)
+    return f"{exc}:{mods[-1][1]}" if mods else exc
+
+
+def _past_lessons(err_class: str, limit: int = 2) -> str:
+    """Stage 4b: query the triage log for past diagnoses of the SAME error class and inject them
+    into the fix prompt — the forge stops re-deriving known root causes from scratch."""
+    log = Path(__file__).resolve().parent.parent / "logs" / "triage_log.jsonl"
+    if not log.exists() or err_class == "unknown":
+        return ""
+    try:
+        rows = [json.loads(l) for l in log.read_text().splitlines() if l.strip()]
+    except ValueError:
+        return ""
+    hits = [r for r in rows if r.get("error_class") == err_class and r.get("root_cause")][-limit:]
+    if not hits:
+        return ""
+    out = ["\n=== PAST DIAGNOSES of this exact error class (from the nightly triage loop) ==="]
+    for r in hits:
+        out.append(f"- [{r.get('location', '?')}] {r['root_cause']}"
+                   + (f" FIX THAT WORKED: {r['fix_summary']}" if r.get("fix_summary") else ""))
+    out.append("If the same root cause applies, fix it the same way instead of guessing.")
+    return "\n".join(out)
+
+
 def fix(code: str, traceback: str) -> str:
+    lessons = _past_lessons(error_class(traceback))
     prompt = (f"{CONTRACT}\n\nThe following module FAILED. Fix it; output ONLY the corrected ```python module.\n\n"
-              f"=== CODE ===\n{code}\n\n=== ERROR ===\n{traceback[-2500:]}")
+              f"=== CODE ===\n{code}\n\n=== ERROR ===\n{traceback[-2500:]}{lessons}")
     return _extract_code(_pi(prompt))
+
+
+# Stage 4a severity ladder (QuantaAlpha regulator pattern): only major+ costs a regeneration.
+# 'minor' (window/normalization/cosmetic deviations that preserve the mechanism) is logged, not fixed —
+# the consistency-fix tail (median 347s vs 211s clean) was dominated by repairs of immaterial nits.
+SEVERITY_FIX = ("major", "critical")
 
 
 def consistency_check(proposal: dict, code: str) -> tuple:
     """Verify the generated code FAITHFULLY implements the proposal's economic thesis (catches code that
     claims one mechanism but computes another — e.g. 'split-consistent' but uses raw shares). Fail-OPEN
-    on a parse error (best-effort guard, not a hard gate). Returns (ok: bool, issues: str)."""
+    on a parse error (best-effort guard, not a hard gate).
+    Returns (severity: none|minor|major|critical, issues: str, corrected: str|None) — for major+ the
+    SAME call returns the corrected module (saves the separate fix() round trip when possible)."""
     claim = {k: proposal.get(k) for k in ("premium", "market", "signal_approach", "why_not_duplicate")}
     prompt = (f"PROPOSAL (the economic thesis the code MUST implement):\n{json.dumps(claim, indent=2)}\n\n"
               f"GENERATED CODE:\n```python\n{code[:30000]}\n```\n\n"  # full module (Fable writes 15-20K; a truncated view causes false 'code is truncated' verdicts -> wasted fix() calls)
               f"Does the code FAITHFULLY implement that thesis + frozen signal construction? Check specifically: "
               f"the actual computation matches the claimed mechanism/direction; point-in-time data (datekey, no "
-              f"look-ahead); correct adjustments (splits, dividends, costs); the right universe; the signal sign. "
-              f'Return ONLY JSON: {{"consistent": true|false, "issues": "specific claim-vs-code mismatches, or empty"}}')
+              f"look-ahead); correct adjustments (splits, dividends, costs); the right universe; the signal sign.\n"
+              f"Grade the WORST deviation found:\n"
+              f"- none: faithful implementation\n"
+              f"- minor: immaterial deviations (slightly different window/normalization/clipping that "
+              f"preserve the mechanism, direction, point-in-time discipline and costs) — acceptable, do NOT flag for repair\n"
+              f"- major: the mechanism, universe, costs or rebalance cadence deviates from the frozen design\n"
+              f"- critical: wrong sign, look-ahead, wrong data field, or the claimed premium is not what is computed\n"
+              f'Return ONLY JSON: {{"severity": "none"|"minor"|"major"|"critical", '
+              f'"issues": "specific claim-vs-code mismatches, or empty", '
+              f'"corrected_code": "<for major/critical ONLY: the FULL corrected python module as one string; else null>"}}')
     d = extract_json(_pi(prompt))
     if d is None:
-        return True, ""  # fail-OPEN: best-effort guard, not a hard gate
-    return bool(d.get("consistent", True)), str(d.get("issues", ""))[:500]
+        return "none", "", None  # fail-OPEN: best-effort guard, not a hard gate
+    if "severity" in d:
+        sev = str(d["severity"]).lower()
+        if sev not in ("none", "minor", "major", "critical"):
+            sev = "major"  # graded but unrecognized -> treat as repair-worthy
+    else:
+        sev = "major" if d.get("consistent") is False else "none"  # tolerate old-shape replies
+    corrected = d.get("corrected_code")
+    corrected = corrected.strip() if isinstance(corrected, str) and _looks_complete(corrected) else None
+    return sev, str(d.get("issues", ""))[:500], corrected
