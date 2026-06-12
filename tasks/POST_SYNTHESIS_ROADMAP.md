@@ -39,11 +39,20 @@ where the floor is only $10–15K — which is exactly why the board said BOREAS
 
 ## BOREAS thread (the board's preferred first real-capital venue)
 
-- Carry forward-verdict date: **2026-08-28** (frozen). If carry confirms → BOREAS carry+trend on
-  IB micro-futures is the first real-money book (natively tradable at $5K, scales 100×).
-- Board sequencing: **IB micro adapter must land by 2026-08-28** so a confirming verdict has a
-  path the moment it arrives. This is the one BUILD item left on the books. Not started.
-  → becomes the next implementation task after a few clean forge nights.
+- **CORRECTION 2026-06-12 (stale date caught during IB-adapter scoping):** the 2026-08-28 carry
+  verdict WILL NEVER ARRIVE — it was the Midas forward demo, and Midas was killed 2026-06-10
+  (wiki overview "binding events"). The carry+trend book is ORPHANED; re-openable only via a
+  fresh carry leg + its own fresh ~3-month forward run (most likely candidate: the elite-pool
+  crypto delta-neutral funding-carry NEAR-MISS, if a variant ever clears stage-1+holdout).
+- The IB micro adapter therefore has **no hard deadline** — but remains the highest-value
+  build: it is the venue for ANY futures/cross-asset PASS (the $10–15K AUM floor vs $25K for
+  borrow-dependent equity is exactly why the board said BOREAS-first). New trigger discipline:
+  adapter must be live-verified before any futures-tradable book STARTS its forward run, so
+  the ~3-month forward window doubles as the execution-path shakedown.
+- Scouting result (2026-06-12): adapter is ~80% BUILT in atlas (brokers/ib + brokers/ib_web,
+  micro-futures table, 169 broker tests pass). Remaining work is operational — IB paper
+  account, CP-Gateway session keepalive, end-to-end order verification, futures sizing/roll
+  policy. Full phased plan: atlas tasks/IB_MICRO_ADAPTER_PLAN.md.
 
 ## Forge-side maturation (no code — data accumulating on timers)
 
