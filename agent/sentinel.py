@@ -37,14 +37,22 @@ from crucible_paths import DATA, WIKI, QUEUE, RUN_LOG, REGISTRY
 
 SHARADAR = DATA / "sharadar"
 CACHE = DATA / "cache" / "sep_long_v2.parquet"
-FWD = Path("/root/atlas/data/live/val_mom_trend_smallcap")
+LIVE = Path("/root/atlas/data/live")
+REGISTRY = Path("/root/atlas/config/live_strategies.json")
+
+
+def _books() -> list[str]:
+    """Registry-driven (#36): every deployed book, not a hardcoded name."""
+    try:
+        return [s["name"] for s in json.loads(REGISTRY.read_text(encoding="utf-8"))]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError):
+        return []
 REQUIRED_FIELDS = ("close", "closeadj", "closeunadj", "volume")
 
 MAX_SHARADAR_AGE_D = 7        # weekly refresh cadence + slack
 MAX_RETURNS_AGE_BD = 3        # forward-paper runs Mon-Fri 23:45
 MAX_WIKI_PUSH_AGE_H = 36      # nightly 06:30 backup + slack
 MAX_RUNLOG_GAP_D = 2          # forge runs nightly 03:30
-EQUITY_BAND = (10_000, 25_000)  # val_mom book: $14.5K capital; outside this = investigate
 
 
 def _age_days(p: Path) -> float | None:
@@ -83,24 +91,37 @@ def check_sep_cache(fail):
 
 
 def check_forward_paper(fail):
-    rj = FWD / "returns.jsonl"
-    if not rj.exists():
-        fail(f"S4 forward-paper: {rj} missing — recorder never ran?")
+    """S4/S5 per deployed book (registry-driven, #36). Equity sanity is vs the book's
+    own registered capital (0.5x–3x band) — the old global band only fit val_mom."""
+    books = _books()
+    if not books:
+        fail("S4 forward-paper: live_strategies.json missing/empty — no books to check")
         return
-    rows = [json.loads(l) for l in rj.read_text(encoding="utf-8").splitlines() if l.strip()]
-    if not rows:
-        fail("S4 forward-paper: returns.jsonl EMPTY")
-        return
-    last = rows[-1]
-    gap = _bdays_since(last["date"])
-    if gap > MAX_RETURNS_AGE_BD:
-        fail(f"S4 forward-paper: last return {last['date']} ({gap} bdays ago > {MAX_RETURNS_AGE_BD}) — daily cycle dead?")
-    r = last.get("ret")
-    if r is None or not (-0.5 < float(r) < 0.5):
-        fail(f"S4 forward-paper: insane daily return {r} on {last['date']}")
-    eq = last.get("equity")
-    if eq is not None and not (EQUITY_BAND[0] <= float(eq) <= EQUITY_BAND[1]):
-        fail(f"S5 forward-paper: equity ${eq:,.0f} outside band ${EQUITY_BAND[0]:,}-${EQUITY_BAND[1]:,}")
+    try:
+        caps = {s["name"]: float(s.get("capital") or 0)
+                for s in json.loads(REGISTRY.read_text(encoding="utf-8"))}
+    except Exception:
+        caps = {}
+    for book in books:
+        rj = LIVE / book / "returns.jsonl"
+        if not rj.exists():
+            fail(f"S4 forward-paper[{book}]: {rj} missing — recorder never ran?")
+            continue
+        rows = [json.loads(l) for l in rj.read_text(encoding="utf-8").splitlines() if l.strip()]
+        if not rows:
+            fail(f"S4 forward-paper[{book}]: returns.jsonl EMPTY")
+            continue
+        last = rows[-1]
+        gap = _bdays_since(last["date"])
+        if gap > MAX_RETURNS_AGE_BD:
+            fail(f"S4 forward-paper[{book}]: last return {last['date']} ({gap} bdays ago > {MAX_RETURNS_AGE_BD}) — daily cycle dead?")
+        r = last.get("ret")
+        if r is None or not (-0.5 < float(r) < 0.5):
+            fail(f"S4 forward-paper[{book}]: insane daily return {r} on {last['date']}")
+        eq, cap = last.get("equity"), caps.get(book, 0)
+        if eq is not None and cap > 0 and not (0.5 * cap <= float(eq) <= 3.0 * cap):
+            fail(f"S5 forward-paper[{book}]: equity ${float(eq):,.0f} outside 0.5x–3x of "
+                 f"registered capital ${cap:,.0f}")
 
 
 def check_wiki_pushed(fail):
