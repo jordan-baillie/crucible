@@ -30,7 +30,7 @@ def _jsonl(path: Path) -> list:
     if not path.exists():
         return []
     out = []
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
             try:
                 out.append(json.loads(line))
@@ -108,7 +108,7 @@ def forge_section() -> list:
 def forward_paper_section() -> list:
     """ALL deployed paper-book strategies (virtual sub-books) + portfolio rollup. Scales with N."""
     try:
-        reg = json.loads(REGISTRY.read_text()) if (REGISTRY and REGISTRY.exists()) else []
+        reg = json.loads(REGISTRY.read_text(encoding="utf-8")) if (REGISTRY and REGISTRY.exists()) else []
     except Exception:
         reg = []
     if not reg:
@@ -122,13 +122,13 @@ def forward_paper_section() -> list:
         rets = _jsonl(d / "returns.jsonl")
         book = {}
         try:
-            book = json.loads((d / "book.json").read_text()) if (d / "book.json").exists() else {}
+            book = json.loads((d / "book.json").read_text(encoding="utf-8")) if (d / "book.json").exists() else {}
         except Exception:
             pass
         base = float(book.get("capital_base") or s.get("capital") or 0)
         eq = None
         try:
-            eq = json.loads((d / "equity_state.json").read_text()).get("equity")
+            eq = json.loads((d / "equity_state.json").read_text(encoding="utf-8")).get("equity")
         except Exception:
             pass
         cum = 1.0

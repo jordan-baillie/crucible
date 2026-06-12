@@ -45,7 +45,7 @@ def _live_values() -> list[str]:
         if not p.exists():
             continue
         try:
-            data = json.loads(p.read_text())
+            data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         for v in data.values():

@@ -156,7 +156,7 @@ def _past_lessons(err_class: str, limit: int = 2) -> str:
     if not log.exists() or err_class == "unknown":
         return ""
     try:
-        rows = [json.loads(l) for l in log.read_text().splitlines() if l.strip()]
+        rows = [json.loads(l) for l in log.read_text(encoding="utf-8").splitlines() if l.strip()]
     except ValueError:
         return ""
     hits = [r for r in rows if r.get("error_class") == err_class and r.get("root_cause")][-limit:]

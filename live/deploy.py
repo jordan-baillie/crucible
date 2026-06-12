@@ -134,10 +134,10 @@ def refresh_all() -> list:
     """Recompute target.json for every deployed paper strategy (read from the host registry)."""
     _require_target()
     out, reg_f = [], ATLAS / "config" / "live_strategies.json"
-    reg = json.loads(reg_f.read_text()) if reg_f.exists() else []
+    reg = json.loads(reg_f.read_text(encoding="utf-8")) if reg_f.exists() else []
     for s in reg:
         meta_f = ATLAS_LIVE / s["name"] / "meta.json"
-        sp = json.loads(meta_f.read_text()).get("strategy_path") if meta_f.exists() else None
+        sp = json.loads(meta_f.read_text(encoding="utf-8")).get("strategy_path") if meta_f.exists() else None
         if not sp or not Path(sp).exists():
             continue
         try:

@@ -49,7 +49,7 @@ def _returns(book: str) -> list[float]:
     f = LIVE / book / "returns.jsonl"
     if not f.exists():
         return []
-    rows = [json.loads(l) for l in f.read_text().splitlines() if l.strip()]
+    rows = [json.loads(l) for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
     return [float(r["ret"]) for r in rows if r.get("ret") is not None]
 
 
@@ -81,7 +81,7 @@ def decay_check(rets: list[float], expectation: dict) -> dict:
 def _load_state() -> dict:
     if STATE_FILE.exists():
         try:
-            return json.loads(STATE_FILE.read_text())
+            return json.loads(STATE_FILE.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {}
@@ -105,7 +105,7 @@ def evaluate_lifecycle(book: str, gates_all_pass: bool, n_days: int) -> dict:
         hist["d1_streak"] = hist.get("d1_streak", 0) + 1 if decay["d1"] else 0
     state[book] = {**hist, "last_eval": datetime.now().isoformat(timespec="seconds"),
                    "last_decay": {k: decay[k] for k in ("d1", "d2", "cusum_peak", "roll_mean")}}
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
     d1_confirmed = hist["d1_streak"] >= CONSECUTIVE_NEEDED
     watch = None

@@ -70,7 +70,7 @@ def main() -> int:
         lines.append(f"- **{r['target']}** (`{r['module']}`): {verdictline}")
         print(f"{r['target']}: {verdictline}")
     out = WIKI / "methodology" / f"retro-regime-audit-{date.today()}.md"
-    out.write_text("\n".join(lines) + "\n")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"\nwiki page: {out}")
     return 0
 

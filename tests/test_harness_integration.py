@@ -26,8 +26,8 @@ def tmp_env(monkeypatch, tmp_path):
     wiki = tmp_path / "wiki"
     for d in ["experiments", "patterns", "decisions", ".queue", ".locks", ".registry", ".elite"]:
         (wiki / d).mkdir(parents=True)
-    (wiki / "log.md").write_text("# log\n")
-    (wiki / "index.md").write_text("# index\n")
+    (wiki / "log.md").write_text("# log\n", encoding="utf-8")
+    (wiki / "index.md").write_text("# index\n", encoding="utf-8")
     ri_state = tmp_path / "ri_state"
     ri_state.mkdir()
     monkeypatch.setenv("CRUCIBLE_WIKI", str(wiki))
@@ -160,7 +160,7 @@ def test_soft_expectations_recorded_and_never_blocking(tmp_env):
     # but the schema-level guarantee is that soft results live OUTSIDE the gate booleans).
     assert isinstance(v["stage1_pass"], bool)
     assert v["PASSED_ALL_GATES"] in (True, False)
-    page = (Path(tmp_env) / "experiments" / "t-softexp.md").read_text()
+    page = (Path(tmp_env) / "experiments" / "t-softexp.md").read_text(encoding="utf-8")
     assert "FALSIFIED" in page and "falsified_claim" in page and "check-error" in page
 
 
@@ -183,7 +183,7 @@ def test_no_expectations_yields_none_not_failure(tmp_env):
                                write_wiki=True, alert=False)
     assert v["soft_expectations"] is None
     assert v["soft_expectations_pass"] is None
-    page = (Path(tmp_env) / "experiments" / "t-noexp.md").read_text()
+    page = (Path(tmp_env) / "experiments" / "t-noexp.md").read_text(encoding="utf-8")
     assert "prose-only" in page
 
 

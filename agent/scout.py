@@ -12,7 +12,7 @@ from crucible_paths import WIKI  # central config
 
 def _read(p):
     f = WIKI / p
-    return f.read_text() if f.exists() else ""
+    return f.read_text(encoding="utf-8") if f.exists() else ""
 
 
 def _pi(prompt):
@@ -99,9 +99,9 @@ queries: {queries}
 """)
     # candidates queue that propose reads
     cq = WIKI / "candidates.md"
-    with open(cq, "a") as f:
+    with open(cq, "a", encoding="utf-8") as f:
         f.write(f"\n## [{today}] web-scout candidates\n{cand_lines}\n")
-    with open(WIKI / "log.md", "a") as f:
+    with open(WIKI / "log.md", "a", encoding="utf-8") as f:
         f.write(f"\n## [{today}] ingest | web-scout: {len(findings.get('candidates',[]))} candidates, "
                 f"{len(findings.get('contradictions',[]))} contradictions -> sources/{today}-scout.md")
     print(f"[scout] ingested {len(findings.get('candidates',[]))} candidates, "

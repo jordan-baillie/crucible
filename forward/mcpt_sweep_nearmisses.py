@@ -62,7 +62,7 @@ def main():
         print(f"[sweep] {entry.get('id', mod_name)}: mcpt_pass={entry.get('mcpt_pass')} "
               f"({entry['elapsed_s']}s)", flush=True)
         # incremental write so partial progress survives
-        with open(OUT + ".tmp", "w") as f:
+        with open(OUT + ".tmp", "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2)
         os.replace(OUT + ".tmp", OUT)
     n_fail = sum(1 for r in results.values() if r.get("mcpt_pass") is False)

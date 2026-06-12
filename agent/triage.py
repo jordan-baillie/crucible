@@ -71,7 +71,7 @@ diagnosis only, no diff. The strategy is disposable; the SDK is not.
 def _state() -> set:
     if STATE.exists():
         try:
-            return {tuple(x) for x in json.loads(STATE.read_text())}
+            return {tuple(x) for x in json.loads(STATE.read_text(encoding="utf-8"))}
         except (ValueError, TypeError):
             pass
     return set()
@@ -178,8 +178,8 @@ def _wiki_note(results: list) -> None:
         page.write_text("# Nightly runtime-error triage\n\nDrafted fixes live on triage/* "
                         "branches — NEVER auto-merged. Merge review must apply the SDK "
                         "byte-exactness rules; after merge, re-enqueue the casualty with "
-                        "`python3 -m agent.triage --requeue <queue_id>`.\n")
-    with page.open("a") as f:
+                        "`python3 -m agent.triage --requeue <queue_id>`.\n", encoding="utf-8")
+    with page.open("a", encoding="utf-8") as f:
         for r in results:
             f.write(f"\n## [{datetime.now():%Y-%m-%d}] {r['title'][:70]}\n"
                     f"- cause ({r['location']}): {r['root_cause']}\n"
@@ -190,7 +190,7 @@ def _wiki_note(results: list) -> None:
 
 
 def requeue(queue_id: str) -> int:
-    rows = [json.loads(l) for l in RUN_LOG.read_text().splitlines() if l.strip()]
+    rows = [json.loads(l) for l in RUN_LOG.read_text(encoding="utf-8").splitlines() if l.strip()]
     match = [r for r in rows if r.get("queue_id") == queue_id]
     if not match:
         print(f"[triage] no run-log row with queue_id {queue_id}")
@@ -204,7 +204,7 @@ def requeue(queue_id: str) -> int:
 def main() -> int:
     if len(sys.argv) > 2 and sys.argv[1] == "--requeue":
         return requeue(sys.argv[2])
-    rows = [json.loads(l) for l in RUN_LOG.read_text().splitlines() if l.strip()] \
+    rows = [json.loads(l) for l in RUN_LOG.read_text(encoding="utf-8").splitlines() if l.strip()] \
         if RUN_LOG.exists() else []
     done = _state()
     todo = [r for r in rows if r.get("fail_reason") in TRIAGE_REASONS
@@ -228,7 +228,7 @@ def main() -> int:
     _wiki_note(results)
     # Stage 4b: append machine-readable rows for codegen's fail->success memory
     TRIAGE_LOG.parent.mkdir(exist_ok=True)
-    with TRIAGE_LOG.open("a") as f:
+    with TRIAGE_LOG.open("a", encoding="utf-8") as f:
         for r in results:
             f.write(json.dumps({"ts": datetime.now().isoformat(timespec="seconds"),
                                 "error_class": r.get("error_class"), "location": r.get("location"),

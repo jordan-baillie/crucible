@@ -22,7 +22,7 @@ CLAIM_TTL = 3600  # reclaim a claimed-but-unfinished item after 1h (worker presu
 def _read_all() -> list[dict]:
     if not QUEUE.exists():
         return []
-    return [json.loads(l) for l in QUEUE.read_text().splitlines() if l.strip()]
+    return [json.loads(l) for l in QUEUE.read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
 def _write_all(items: list[dict]) -> None:

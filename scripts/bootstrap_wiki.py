@@ -69,12 +69,12 @@ def main():
         f = wiki / rel
         if not f.exists():
             f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(content)
+            f.write_text(content, encoding="utf-8")
             print(f"  created {rel}")
     for rel in [".queue/queue.jsonl", ".registry/hypothesis_registry.jsonl", ".elite/pool.jsonl"]:
         f = wiki / rel
         if not f.exists():
-            f.write_text("")
+            f.write_text("", encoding="utf-8")
             print(f"  created {rel}")
     print(f"\nWiki ready at {wiki}")
     print(f"Set:  export CRUCIBLE_WIKI={wiki}")

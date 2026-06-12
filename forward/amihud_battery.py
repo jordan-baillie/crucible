@@ -149,7 +149,7 @@ def main():
     res["elapsed_s"] = round(time.time() - t0, 1)
     res["finished"] = pd.Timestamp.now().isoformat()
     tmp = OUT + ".tmp"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(res, f, indent=2)
     import os
     os.replace(tmp, OUT)

@@ -11,7 +11,7 @@ from crucible_paths import ROOT, WIKI  # central config
 def digest(n=5):
     rl = ROOT / "agent" / "run_log.jsonl"
     if not rl.exists(): return
-    runs = [json.loads(l) for l in rl.read_text().splitlines() if l.strip()][-n:]
+    runs = [json.loads(l) for l in rl.read_text(encoding="utf-8").splitlines() if l.strip()][-n:]
     if not runs: return
     passes = [r for r in runs if r.get("passed_all")]
     for r in runs:

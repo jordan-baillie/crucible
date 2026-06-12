@@ -54,7 +54,7 @@ def track():
            "fwd_sharpe": sh(fwd), "fwd_cum_return": round(float((1 + fwd).prod() - 1), 4) if len(fwd) else 0.0,
            "backtest_search_sharpe": 1.22, "holdout_sharpe": 0.80}
     LEDGER.parent.mkdir(exist_ok=True)
-    with open(LEDGER, "a") as f:
+    with open(LEDGER, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec) + "\n")
     print(f"[bab-forward] {rec['fwd_days']}d forward | Sharpe {rec['fwd_sharpe']} | "
           f"cum {rec['fwd_cum_return']:.2%} | last data {rec['last_data']} | verdict {VERDICT_DATE}")

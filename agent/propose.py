@@ -10,7 +10,7 @@ SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 
 def _read(p):
     f = WIKI / p
-    return f.read_text() if f.exists() else ""
+    return f.read_text(encoding="utf-8") if f.exists() else ""
 
 
 def _read_tail(p, max_chars: int):

@@ -17,15 +17,15 @@ def cap_log():
     log = WIKI / "log.md"
     if not log.exists():
         return 0
-    lines = log.read_text().splitlines()
+    lines = log.read_text(encoding="utf-8").splitlines()
     entries = [i for i, l in enumerate(lines) if l.startswith("## [")]
     if len(entries) <= LOG_KEEP:
         return 0
     cut = entries[-LOG_KEEP]
-    with (WIKI / "log-archive.md").open("a") as f:
+    with (WIKI / "log-archive.md").open("a", encoding="utf-8") as f:
         f.write("\n".join(lines[:cut]) + "\n")
     head = lines[0] if lines and lines[0].startswith("#") else "# Log"
-    log.write_text(head + "\n" + "\n".join(lines[cut:]) + "\n")
+    log.write_text(head + "\n" + "\n".join(lines[cut:]) + "\n", encoding="utf-8")
     return len(entries) - LOG_KEEP
 
 
@@ -36,13 +36,13 @@ def prune_candidates():
         return 0
     tested = {_norm(p.stem) for p in (WIKI / "experiments").glob("*.md")}
     kept, dropped = [], 0
-    for l in cand.read_text().splitlines():
+    for l in cand.read_text(encoding="utf-8").splitlines():
         m = re.match(r"^- \*\*(.+?)\*\*", l.strip())
         if m and _norm(m.group(1)) in tested:
             dropped += 1
             continue
         kept.append(l)
-    cand.write_text("\n".join(kept) + "\n")
+    cand.write_text("\n".join(kept) + "\n", encoding="utf-8")
     return dropped
 
 
@@ -115,10 +115,10 @@ def permission_audit_reminder() -> str | None:
     marker = WIKI / ".registry" / "last_permission_audit"
     if not marker.exists():
         marker.parent.mkdir(exist_ok=True)
-        marker.write_text(f"{datetime.now():%Y-%m-%d} (seeded by lint — do a real audit and update)\n")
+        marker.write_text(f"{datetime.now():%Y-%m-%d} (seeded by lint — do a real audit and update)\n", encoding="utf-8")
         return None
     try:
-        last = datetime.strptime(marker.read_text()[:10], "%Y-%m-%d")
+        last = datetime.strptime(marker.read_text(encoding="utf-8")[:10], "%Y-%m-%d")
     except ValueError:
         return f"⚠️ permission-audit marker unparseable ({marker})"
     days = (datetime.now() - last).days
@@ -134,9 +134,9 @@ def lint():
     n_elite_pruned = prune_elite()
     nexp = len(list((WIKI / "experiments").glob("*.md")))
     reg = WIKI / ".registry" / "hypothesis_registry.jsonl"
-    nreg = len(reg.read_text().splitlines()) if reg.exists() else 0
+    nreg = len(reg.read_text(encoding="utf-8").splitlines()) if reg.exists() else 0
     elite = WIKI / ".elite" / "pool.jsonl"
-    nelite = len(elite.read_text().splitlines()) if elite.exists() else 0
+    nelite = len(elite.read_text(encoding="utf-8").splitlines()) if elite.exists() else 0
     npages = len(list(WIKI.rglob("*.md")))
     orph = orphans()
     print(f"[lint] {datetime.now():%Y-%m-%d}: archived {a} log entries | pruned {d} tested candidates | "
@@ -151,7 +151,7 @@ def lint():
             notice(reminder, source="lint")
         except Exception:
             pass  # reminder is best-effort; lint's pruning work must not fail on it
-    with (WIKI / "log.md").open("a") as f:
+    with (WIKI / "log.md").open("a", encoding="utf-8") as f:
         f.write(f"\n## [{datetime.now():%Y-%m-%d}] lint | archived {a} log, pruned {d} candidates | "
                 f"{nexp} exp, {nreg} reg, {nelite} elite, {len(orph)} orphans")
     return {"archived": a, "pruned": d, "experiments": nexp, "registry": nreg, "elite": nelite, "orphans": orph}

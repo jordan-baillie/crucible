@@ -43,7 +43,7 @@ def test_stale_lock_is_stolen_not_live(monkeypatch, tmp_path):
     # plant an EXPIRED lock
     stale = FileLock("t3", ttl=5)
     stale.path.parent.mkdir(parents=True, exist_ok=True)
-    stale.path.write_text(json.dumps({"owner": "dead", "acquired": 0, "expires": 1}))
+    stale.path.write_text(json.dumps({"owner": "dead", "acquired": 0, "expires": 1}), encoding="utf-8")
     got = FileLock("t3", ttl=5, wait=2).acquire()   # must steal
     assert got.path.exists()
     got.release()

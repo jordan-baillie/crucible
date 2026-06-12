@@ -65,7 +65,7 @@ class FileLock:
         except FileNotFoundError:
             return  # released (or stolen) meanwhile
         try:
-            data = json.loads(claim.read_text())
+            data = json.loads(claim.read_text(encoding="utf-8"))
             expired = time.time() > float(data.get("expires", 0))
         except ValueError:
             expired = True  # corrupt payload -> treat as dead
@@ -97,7 +97,7 @@ class FileLock:
         if not self._held:
             return
         try:
-            data = json.loads(self.path.read_text())
+            data = json.loads(self.path.read_text(encoding="utf-8"))
             if data.get("owner") == self.owner:
                 self.path.unlink(missing_ok=True)
         except (FileNotFoundError, ValueError):

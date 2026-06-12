@@ -85,14 +85,14 @@ def run_battery(spec, panel_loader, universes: list, holdout_start: str,
     if out_json:
         out_json = Path(out_json)
         fd, tmp = tempfile.mkstemp(dir=str(out_json.parent), suffix=".tmp")
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(res, f, indent=2, default=str)
         os.replace(tmp, out_json)
 
     # O5: battery evidence goes to the wiki, not just a gitignored JSON
     page = WIKI / "experiments" / f"{spec.id}.md"
     if page.exists():
-        with open(page, "a") as f:
+        with open(page, "a", encoding="utf-8") as f:
             f.write(f"\n\n## Stage-2 battery ({pd.Timestamp.now():%Y-%m-%d})\n"
                     f"- MCPT: p={mcpt_res.get('p_value', mcpt_res.get('p_value_lb'))} "
                     f"(n={mcpt_res.get('n_ran')}) -> {'PASS' if mcpt_pass else 'FAIL'}\n"

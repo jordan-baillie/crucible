@@ -135,7 +135,7 @@ def run_one_from_queue():
                                          f"owns ALL I/O and data is fetched via sdk.adapters only.")
                 continue
             mod = ROOT / "strategies" / f"{sid.replace('-', '_')}.py"
-            mod.write_text(code)
+            mod.write_text(code, encoding="utf-8")
             print(f"[{AGENT_ID}] run attempt {attempt}...")
             stages["run_attempts"] = attempt
             t_run = time.time()
@@ -180,7 +180,7 @@ def run_one_from_queue():
                "passed_all": bool(verdict and verdict.get("PASSED_ALL_GATES"))}
     RUNLOG.parent.mkdir(exist_ok=True)
     with FileLock("runlog", ttl=30):  # proposals can exceed the 4KB atomic-append size
-        with open(RUNLOG, "a") as f:
+        with open(RUNLOG, "a", encoding="utf-8") as f:
             f.write(json.dumps(outcome, default=str) + "\n")
     queue.complete(item["id"], verdict)
     try:

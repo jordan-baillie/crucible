@@ -45,7 +45,7 @@ MIN_REGIME_DAYS = 5
 def _jsonl(p: Path) -> list:
     if not p.exists():
         return []
-    return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+    return [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
 def _iwm_regimes(dates: list[str]) -> dict[str, str]:
@@ -158,7 +158,7 @@ def write_wiki(ev: dict) -> Path:
             "2026-06-11), clean reconciliation; slippage/broker-error gates pending fill "
             "data. Real capital additionally needs the AUM floor + human approval.\n\n"
             "| asof | verdict | fills | days | expectancy | regimes | recon | slip | err | equity |\n"
-            "|---|---|---|---|---|---|---|---|---|---|\n")
+            "|---|---|---|---|---|---|---|---|---|---|\n", encoding="utf-8")
     g = ev["gates"]
 
     def _m(key):
@@ -173,7 +173,7 @@ def write_wiki(ev: dict) -> Path:
            f"{_m('G4_regimes')} | {_m('G5_reconciliation')} | "
            f"{_m('G6_slippage')} | {_m('G7_broker_errors')} | "
            f"${ev['equity']:,.0f} |\n" if ev.get("equity") else "n/a |\n")
-    with page.open("a") as f:
+    with page.open("a", encoding="utf-8") as f:
         f.write(row)
     return page
 

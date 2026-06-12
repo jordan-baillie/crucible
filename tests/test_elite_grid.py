@@ -34,7 +34,7 @@ def test_one_entry_per_cell(pool):
     elite.record(_outcome("Amihud illiquidity premium v1", "US small-cap equities", 0.8))
     elite.record(_outcome("Amihud illiquidity premium v2 variant", "US small-cap equities", 0.9))
     elite.record(_outcome("Amihud illiquidity premium v3 variant", "US small-cap equities", 0.7))
-    items = [json.loads(l) for l in p.read_text().splitlines()]
+    items = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()]
     cells = [i["cell"] for i in items]
     assert len(cells) == len(set(cells)), "duplicate cell occupancy"
     # same family+universe+band -> exactly ONE survives, the best
@@ -45,7 +45,7 @@ def test_weaker_never_displaces(pool):
     elite, p, _ = pool
     elite.record(_outcome("Carry premium strong", "futures", 0.95))
     elite.record(_outcome("Carry premium weak variant", "futures", 0.6))
-    items = [json.loads(l) for l in p.read_text().splitlines()]
+    items = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()]
     assert len(items) == 1 and items[0]["fitness"] == 0.95
 
 
@@ -54,20 +54,20 @@ def test_different_families_coexist(pool):
     elite.record(_outcome("Amihud illiquidity premium", "US small-cap equities", 0.9))
     elite.record(_outcome("Seasonal turn-of-month effect", "US small-cap equities", 0.7))
     elite.record(_outcome("Carry roll yield premium", "futures", 0.8))
-    assert len(p.read_text().splitlines()) == 3
+    assert len(p.read_text(encoding="utf-8").splitlines()) == 3
 
 
 def test_min_fitness_and_beta_confound_rejected(pool):
     elite, p, _ = pool
     elite.record(_outcome("Quality premium weak", "US equities", 0.3))            # below MIN_FIT
     elite.record(_outcome("Value premium confounded", "US equities", 0.9, beta_confound=True))
-    assert not p.exists() or p.read_text().strip() == ""
+    assert not p.exists() or p.read_text(encoding="utf-8").strip() == ""
 
 
 def test_closed_family_never_recorded_or_sampled(pool):
     elite, p, cf = pool
     elite.record(_outcome("Momentum 12-1 premium", "US equities", 0.9))
-    cf.write_text("momentum\n")
+    cf.write_text("momentum\n", encoding="utf-8")
     elite.record(_outcome("Momentum 12-1 again", "US equities", 0.95))  # post-close: rejected
     assert elite.sample(random.Random(1)) is None  # pre-close entry filtered at read time too
     assert elite.sample_pair(random.Random(1)) is None
@@ -94,7 +94,7 @@ def test_legacy_migration_rebins(pool):
     assert {i["id"] for i in top} == {"a", "c"}
     # recording a new better same-cell item persists the migrated (deduped) grid
     elite.record(_outcome("Amihud illiquidity premium v9", "US small + mid-cap equities", 1.0, n_trades=400))
-    items = [json.loads(l) for l in p.read_text().splitlines()]
+    items = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()]
     amihud = [i for i in items if elite._family(i) == "amihud" or "amihud" in i["title"].lower()]
     assert all("cell" in i for i in items)
 

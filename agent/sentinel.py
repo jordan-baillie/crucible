@@ -87,7 +87,7 @@ def check_forward_paper(fail):
     if not rj.exists():
         fail(f"S4 forward-paper: {rj} missing — recorder never ran?")
         return
-    rows = [json.loads(l) for l in rj.read_text().splitlines() if l.strip()]
+    rows = [json.loads(l) for l in rj.read_text(encoding="utf-8").splitlines() if l.strip()]
     if not rows:
         fail("S4 forward-paper: returns.jsonl EMPTY")
         return
@@ -123,7 +123,7 @@ def check_queue(fail):
     if not QUEUE.exists():
         fail(f"S7 queue: {QUEUE} missing")
         return
-    rows = [json.loads(l) for l in QUEUE.read_text().splitlines() if l.strip()]
+    rows = [json.loads(l) for l in QUEUE.read_text(encoding="utf-8").splitlines() if l.strip()]
     open_items = [r for r in rows if r.get("status") in ("queued", "claimed")]
     if not open_items and _age_days(QUEUE) and _age_days(QUEUE) > 2:
         fail("S7 queue: no open items and file stale >2d — director top-up failing (forge will idle)")
@@ -143,7 +143,7 @@ def check_holdout_ledger(fail):
     if not led.exists():
         return  # legitimate pre-first-run state
     seen, dupes = set(), []
-    for i, l in enumerate(led.read_text().splitlines()):
+    for i, l in enumerate(led.read_text(encoding="utf-8").splitlines()):
         if not l.strip():
             continue
         try:
@@ -164,7 +164,7 @@ def check_loop_registry(fail):
     if not reg.exists():
         fail("S10 loop registry: research-wiki/loops.md missing")
         return
-    txt = reg.read_text()
+    txt = reg.read_text(encoding="utf-8")
     try:
         r = subprocess.run(["systemctl", "list-timers", "--all", "--no-legend", "--plain"],
                            capture_output=True, text=True, timeout=10)
@@ -185,7 +185,7 @@ def check_forward_paper_log(fail):
     log = Path("/root/atlas/data/live/forward_paper.log")
     if not log.exists():
         return  # S4 already covers total absence via returns.jsonl
-    lines = log.read_text().splitlines()
+    lines = log.read_text(encoding="utf-8").splitlines()
     starts = [i for i, l in enumerate(lines) if l.startswith("=== forward-paper cycle")]
     if not starts:
         return

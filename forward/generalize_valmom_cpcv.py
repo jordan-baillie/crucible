@@ -159,7 +159,7 @@ def main():
     rec = {"ts": datetime.now().isoformat(), "holdout": HOLDOUT,
            "method": "per-tier ri.assemble_bundle CPCV/PBO/DSR + OOS Sharpe (rails-faithful)",
            "results": out}
-    with open("/root/crucible/forward/valmom_generalization_cpcv.jsonl", "a") as f:
+    with open("/root/crucible/forward/valmom_generalization_cpcv.jsonl", "a", encoding="utf-8") as f:
         f.write(json.dumps(rec) + "\n")
     print("\n=== FULL JSON ===")
     print(json.dumps(rec, indent=2))

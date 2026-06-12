@@ -145,7 +145,7 @@ def notice(text: str, source: str = "?") -> None:
     from crucible_paths import ROOT
     p = ROOT / "logs" / "notices.jsonl"
     p.parent.mkdir(exist_ok=True)
-    with open(p, "a") as f:
+    with open(p, "a", encoding="utf-8") as f:
         f.write(json.dumps({"ts": datetime.datetime.now().isoformat(timespec="seconds"),
                             "source": source, "text": text}) + "\n")
     print(f"[notify] notice queued for morning report ({source})")
@@ -158,14 +158,14 @@ def drain_notices() -> list:
     p = ROOT / "logs" / "notices.jsonl"
     if not p.exists():
         return []
-    txt = p.read_text()
+    txt = p.read_text(encoding="utf-8")
     rows = []
     for l in txt.splitlines():
         try:
             rows.append(json.loads(l))
         except json.JSONDecodeError:
             pass
-    with open(p.parent / "notices-archive.jsonl", "a") as f:
+    with open(p.parent / "notices-archive.jsonl", "a", encoding="utf-8") as f:
         f.write(txt if txt.endswith("\n") or not txt else txt + "\n")
     p.unlink()
     return rows

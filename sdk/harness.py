@@ -87,9 +87,9 @@ def _repo_sha() -> str | None:
     (works inside restricted contexts), never raises."""
     try:
         git = Path(__file__).resolve().parents[1] / ".git"
-        head = (git / "HEAD").read_text().strip()
+        head = (git / "HEAD").read_text(encoding="utf-8").strip()
         if head.startswith("ref: "):
-            return (git / head[5:]).read_text().strip()[:12]
+            return (git / head[5:]).read_text(encoding="utf-8").strip()[:12]
         return head[:12]
     except Exception:
         return None

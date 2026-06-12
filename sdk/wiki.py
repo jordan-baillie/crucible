@@ -13,7 +13,7 @@ def _atomic_write(path: Path, text: str) -> None:
     """temp-file + os.replace so a crash mid-write never leaves a torn page."""
     fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
         os.replace(tmp, path)
     except BaseException:
@@ -106,7 +106,7 @@ def write_experiment(spec, verdict: dict):
     # original PROMOTE-tier page). Never overwrite a page whose title differs — version it.
     if page.exists():
         try:
-            old = page.read_text()
+            old = page.read_text(encoding="utf-8")
             old_title = next((l[2:].strip() for l in old.splitlines() if l.startswith("# ")), "")
             if old_title and old_title != spec.title:
                 import hashlib
@@ -158,8 +158,8 @@ generated_by: crucible-agent
     # 3 smiths finish concurrently: serialize the shared-file appends.
     stem = page.stem
     with FileLock("wiki-append", ttl=30):
-        with open(WIKI / "log.md", "a") as f:
+        with open(WIKI / "log.md", "a", encoding="utf-8") as f:
             f.write(f"\n## [{date.today()}] experiment | {stem} -> {status} (tier {verdict['tier']}, holdout {verdict['holdout_pass']})")
-        with open(WIKI / "index.md", "a") as f:
+        with open(WIKI / "index.md", "a", encoding="utf-8") as f:
             f.write(f"\n- [[experiments/{stem}]] — {status} ({spec.title})")
     return page

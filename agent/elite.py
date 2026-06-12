@@ -67,7 +67,7 @@ def _closed_families() -> set:
     premium (the value×mom-hammering failure mode, closed 2026-06-10)."""
     if not CLOSED_FAMILIES.exists():
         return set()
-    return {l.strip() for l in CLOSED_FAMILIES.read_text().splitlines()
+    return {l.strip() for l in CLOSED_FAMILIES.read_text(encoding="utf-8").splitlines()
             if l.strip() and not l.startswith("#")}
 
 
@@ -83,7 +83,7 @@ def _fitness(v: dict) -> float:
 
 
 def _load() -> list:
-    return [json.loads(l) for l in POOL.read_text().splitlines() if l.strip()] if POOL.exists() else []
+    return [json.loads(l) for l in POOL.read_text(encoding="utf-8").splitlines() if l.strip()] if POOL.exists() else []
 
 
 def _grid(items: list, closed: set | None = None) -> dict:
