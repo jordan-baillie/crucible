@@ -72,6 +72,13 @@ def _iwm_regimes(dates: list[str]) -> dict[str, str]:
 MODELED_COST_BPS = {"val_mom_trend_smallcap": 8.0}  # from each frozen design's cost spec
 SLIPPAGE_MULT = 2.0
 MAX_BROKER_ERR = 0.01
+LOOKBACK_DAYS = 60  # G6/G7 evidence window (prereg-g6g7-consolidation 2026-06-13; adopted from atlas)
+SCHEMA_VERSION = 1  # evidence.json artifact version
+
+
+def _cutoff(lookback_days: int = LOOKBACK_DAYS) -> str:
+    from datetime import date, timedelta
+    return (date.today() - timedelta(days=lookback_days)).isoformat()
 
 
 def evaluate(book: str) -> dict:
@@ -113,38 +120,80 @@ def evaluate(book: str) -> dict:
     # PASS requires ALL SEVEN gates scoreable and green — a gate without data is not a pass
     verdict = "PASS" if len(scoreable) == len(gates) and all(g["pass"] for g in scoreable) \
         else "ACCUMULATING"
-    return {"book": book, "asof": datetime.now().strftime("%Y-%m-%d"),
-            "verdict": verdict, "gates": gates,
-            "equity": (returns[-1].get("equity") if returns else None)}
+    ev = {"schema_version": SCHEMA_VERSION, "book": book,
+          "asof": datetime.now().strftime("%Y-%m-%d"),
+          "verdict": verdict, "gates": gates,
+          "equity": (returns[-1].get("equity") if returns else None)}
+    _write_artifact(d, ev)
+    return ev
+
+
+def _write_artifact(book_dir: Path, ev: dict) -> None:
+    """data/live/<book>/evidence.json — the single-sourced gate verdict (atomic write).
+    Atlas's dashboard renders THIS after the soak cutover (prereg-g6g7-consolidation)."""
+    try:
+        p = book_dir / "evidence.json"
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(ev, indent=2, default=str), encoding="utf-8")
+        tmp.replace(p)
+    except OSError as e:
+        print(f"[evidence] WARNING: artifact write failed ({e}) — dashboard will be stale")
 
 
 def _g6(book: str, returns: list, fills: list) -> dict:
+    """G6 — median steady-state slippage over the 60d window (prereg-g6g7-consolidation).
+    Day-1 build excluded; build day = EARLIEST fill across ALL fills (not just window),
+    so the exclusion stays correct after the build day ages out of the lookback."""
     import statistics
-    # exclude the day-1 book build: one-off establishment cost, not steady-state rebalance.
-    # Build day = the EARLIEST fill date (returns.jsonl starts a day later — first return
-    # needs a prior close — so keying on returns[0] would exclude the wrong day).
-    build_day = min((f["date"] for f in fills if f.get("date")), default=None)
-    sl = [f["slippage_bps"] for f in fills
-          if f.get("slippage_bps") is not None and f.get("date") != build_day]
+    cut = _cutoff()
+    build_day = min((str(f["date"]) for f in fills if f.get("date")), default=None)
+    sl = [float(f["slippage_bps"]) for f in fills
+          if f.get("slippage_bps") is not None and str(f.get("date", "")) >= cut
+          and str(f.get("date")) != build_day]
     modeled = MODELED_COST_BPS.get(book)
     if not sl or modeled is None:
         return {"value": None, "need": f"median <= {SLIPPAGE_MULT}x modeled", "pass": None,
-                "note": f"{len(sl)} steady-state fills — accumulating"}
+                "lookback_days": LOOKBACK_DAYS, "build_day_excluded": build_day,
+                "note": f"{len(sl)} steady-state fills in window — accumulating"}
     med = statistics.median(sl)
     bar = SLIPPAGE_MULT * modeled
     return {"value": round(med, 1), "need": f"<= {bar:.0f}bps (2x {modeled:.0f}bps modeled)",
-            "pass": med <= bar, "n_fills": len(sl)}
+            "pass": med <= bar, "n_fills": len(sl),
+            "lookback_days": LOOKBACK_DAYS, "build_day_excluded": build_day}
 
 
 def _g7(runs: list) -> dict:
-    placed = [o for r in runs if not r.get("dry_run") and not r.get("blocked")
-              for o in r.get("orders", []) if o.get("ok") is not None]
+    """G7 — broker rejection rate, 60d window (prereg-g6g7-consolidation). Wash-trade
+    collisions excluded from numerator AND denominator (shared-paper-account artifact,
+    impossible on dedicated canary/live accounts — not deployability evidence) but
+    reported; ok=None rows (broker-result join missing) out of denominator, reported."""
+    cut = _cutoff()
+    n_err, n_ok, n_wash, n_unmatched = 0, 0, 0, 0
+    for r in runs:
+        if r.get("dry_run") or r.get("blocked") or str(r.get("date", "")) < cut:
+            continue
+        for o in r.get("orders", []):
+            ok = o.get("ok")
+            if ok is None:
+                n_unmatched += 1
+                continue
+            err = (o.get("err") or "").lower()
+            if ok is False and "wash trade" in err:
+                n_wash += 1
+                continue
+            if ok is False:
+                n_err += 1
+            else:
+                n_ok += 1
+    placed = n_err + n_ok
     if not placed:
         return {"value": None, "need": f"< {MAX_BROKER_ERR:.0%}", "pass": None,
-                "note": "no ok-flagged orders yet (field added 2026-06-11)"}
-    err = sum(1 for o in placed if not o["ok"]) / len(placed)
-    return {"value": round(err, 4), "need": f"< {MAX_BROKER_ERR:.0%}", "pass": err < MAX_BROKER_ERR,
-            "n_orders": len(placed)}
+                "lookback_days": LOOKBACK_DAYS,
+                "note": "no ok-flagged orders in window (field added 2026-06-11)"}
+    rate = n_err / placed
+    return {"value": round(rate, 4), "need": f"< {MAX_BROKER_ERR:.0%}", "pass": rate < MAX_BROKER_ERR,
+            "n_orders": placed, "n_excluded_wash": n_wash, "n_unmatched": n_unmatched,
+            "lookback_days": LOOKBACK_DAYS}
 
 
 def write_wiki(ev: dict) -> Path:
