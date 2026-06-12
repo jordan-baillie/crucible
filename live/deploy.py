@@ -120,13 +120,22 @@ def deploy_to_paper(strategy_path: str, *, name: Optional[str] = None, capital: 
     weights = extract_target_weights(trades)
     exp = compute_expectation(net, getattr(spec, "holdout_start", "2022-01-01"))
     write_target(name, weights, strategy_path)
-    subprocess.run(
+    # check=True + captured output + Telegram on failure (2026-06-12 review finding: check=False
+    # left an orphaned half-deploy possible — target.json written but no registry entry — silently).
+    proc = subprocess.run(
         [sys.executable, "-c",
          f"import sys; sys.path.insert(0, {str(ATLAS)!r}); from atlas.execution.providers import deploy_pass; "
          f"deploy_pass({name!r}, capital={capital}, broker={broker!r}, expectation={exp!r}, "
          f"strategy_path={strategy_path!r}, tif={tif!r})"],
-        cwd=str(ATLAS), check=False,
+        cwd=str(ATLAS), capture_output=True, text=True,
     )
+    if proc.returncode != 0:
+        from sdk.notify import telegram_msg
+        err = (proc.stderr or proc.stdout or "").strip()[-500:]
+        telegram_msg(f"\u26a0\ufe0f DEPLOY REGISTRATION FAILED: {name}\n"
+                     f"target.json was written but atlas registry append failed — "
+                     f"ORPHANED HALF-DEPLOY, fix before next daily cycle.\n{err}")
+        raise RuntimeError(f"deploy_pass registration failed for {name}: {err}")
     return {"name": name, "n_positions": len(weights), "expectation": exp, "weights": weights}
 
 
