@@ -53,3 +53,27 @@ def test_decade_wrap_disambiguation(cl):
 def test_days_to_roll_counts_down(cl):
     within = cl.groupby("symbol_1")["days_to_roll_1"]
     assert (within.last() == 0).mean() > 0.95  # last day on the front == roll day
+
+
+def test_ret_field_roll_and_negative_safe(cl):
+    """field='ret' (added 2026-06-14): roll-safe, recycled-symbol-safe, negative-base-safe.
+    Guards the three futures-returns footguns that crashed/contaminated hand-rolled returns."""
+    from sdk.adapters import fut_curve
+    ret = fut_curve("CL", field="ret")
+    assert ret.name == "CL_ret" and len(ret) == len(cl)
+    # 1. roll-safe: return is NaN at every front-contract change (no diff across rolls)
+    sym = cl["symbol_1"]
+    rolls = sym.ne(sym.shift()) & sym.shift().notna()
+    assert ret[rolls].isna().all(), "returns bridged a roll boundary"
+    # 2. recycled-symbol-safe + negative-base-safe: annualized vol must be sane (~0.3-0.5 for CL).
+    #    A symbol-string groupby would bridge CLZ0 2010<->2020 (vol >1.0); a raw pct_change off
+    #    the -$2.67 2020-04-20 settle would explode to +439%.
+    assert ret.std() * (252 ** 0.5) < 0.7, "vol too high — roll/recycle/negative contamination"
+    assert ret.loc["2020-04-21"] != ret.loc["2020-04-21"] or abs(ret.loc["2020-04-21"]) < 1, \
+        "negative-base pct_change not masked (2020-04-21 off the -$2.67 base)"
+    # 3. list form -> wide panel; bare-string footgun-safe
+    panel = fut_curve(["CL", "GC"], field="ret")
+    assert list(panel.columns) == ["CL", "GC"]
+    # 4. invalid field rejected loudly
+    with pytest.raises(ValueError):
+        fut_curve("CL", field="close")

@@ -230,12 +230,19 @@ DATABENTO_DIR = str(DATA / "databento")
 _MONTH_CODE = {m: i + 1 for i, m in enumerate("FGHJKMNQUVXZ")}
 
 
-def fut_curve(root, n_contracts=2, min_volume=1) -> pd.DataFrame:
+def fut_curve(root, n_contracts=2, min_volume=1, field=None):
     """Daily futures CURVE panel from owned Databento GLBX daily bars (one-time pull 2026-06-12,
     17 commodity roots, all contract months, 2010+). For each business day, ranks the OUTRIGHT
     contracts that actually traded (volume >= min_volume) by expiry and returns the nearest
     `n_contracts`: columns close_1..n, volume_1..n, symbol_1..n, days_to_roll_1 (days until the
     front contract's last trade — for roll-aware execution).
+
+    field="ret" (added 2026-06-14): the roll-SAFE within-contract front-month return — the one
+    thing generated strategies reach for, and the #1 way to get futures wrong (diffing close_1
+    across a roll contaminates the return with the roll gap). Pass a single root -> returns a
+    Series ({root}_ret); pass a list/tuple of roots -> returns a wide DataFrame (date x root).
+    Bare-string-safe. Returns at each roll boundary are NaN (a new front contract starts a new
+    group), never bridging two contracts. Use this instead of computing returns by hand.
 
     THE point of this dataset: basis-momentum (Boons-Prado 2019) and curve signals need the first
     AND second contract separately; stitched continuous series (yf_panel) cannot express them.
@@ -248,6 +255,28 @@ def fut_curve(root, n_contracts=2, min_volume=1) -> pd.DataFrame:
     - returns are NOT roll-adjusted: compute returns WITHIN a contract (groupby symbol) or use
       rank-1/rank-2 series with roll-day awareness — never diff close_1 across a roll naively."""
     import re
+    if field is not None:
+        if field != "ret":
+            raise ValueError(f"fut_curve: field must be None or 'ret', got {field!r}")
+        roots_list = [root] if isinstance(root, str) else list(root)
+        cols = {}
+        for rt in roots_list:
+            cur = fut_curve(rt, n_contracts=n_contracts, min_volume=min_volume)  # field=None -> curve
+            # roll-safe: group by CONTIGUOUS front-contract spans, not the symbol string — symbols
+            # recycle each decade (CLZ0 = Dec-2010 AND Dec-2020), so groupby(symbol_1) would bridge
+            # a 10y gap. cumsum on symbol-change gives a fresh id per span; pct_change within span
+            # makes the first bar of every new front contract NaN, so the roll gap never enters.
+            sym = cur["symbol_1"]
+            span = sym.ne(sym.shift()).cumsum()
+            px = cur["close_1"].astype(float)
+            r = px.groupby(span).pct_change()
+            # negative/zero price base breaks pct_change (WTI settled -$2.67 on 2020-04-20 — a
+            # REAL event, not bad data): a % return off a non-positive base is undefined and
+            # explodes (+439%). Mask those to NaN; the prior bar's price must be > 0.
+            r = r.where(px.groupby(span).shift() > 0)
+            cols[rt] = r
+        panel = pd.DataFrame(cols).sort_index()
+        return panel[roots_list[0]].rename(f"{root}_ret") if isinstance(root, str) else panel
     cache = os.path.join(_CACHE_DIR, f"futcurve_{root}_{n_contracts}_{min_volume}.parquet")
     src = os.path.join(DATABENTO_DIR, f"{root}_ohlcv1d.parquet")
     if not os.path.exists(src):
