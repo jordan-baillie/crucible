@@ -373,6 +373,8 @@ def cboe_index(names=("VIX3M", "VVIX", "SKEW", "PUT")) -> pd.DataFrame:
     Depth: VIX3M 2009+, VVIX 2006+, SKEW 1990+, PUT 1991+. Spot VIX itself: use FRED VIXCLS.
     Canonical contango regime signal: VIXCLS / VIX3M (backwardation when > ~1.0)."""
     import io
+    if isinstance(names, str):  # footgun class (cf. cot_positioning 2026-06-13): "VVIX" -> ['V','V','I','X']
+        names = [names]
     names = list(names)
     cache = _day_cache("cboe", names)
     if cache and os.path.exists(cache):
@@ -403,6 +405,8 @@ def funding_rates(symbols=("BTCUSDT", "ETHUSDT"), source="binance") -> pd.DataFr
     Replaces the deleted Midas carry_returns(); the carry+trend STRUCTURE is validated wiki
     knowledge but any new leg needs fresh forward validation before deployment."""
     import time as _t
+    if isinstance(symbols, str):  # footgun class: "BTCUSDT" -> per-character iteration
+        symbols = [symbols]
     cache = _day_cache("funding", [source, *symbols])
     if cache and os.path.exists(cache):
         return pd.read_parquet(cache)
@@ -440,6 +444,8 @@ def treasury_auctions(types=("Note", "Bond"), start="2010-01-01") -> pd.DataFram
     offering_amount] sorted by auction_date. POINT-IN-TIME: the auction is knowable from
     announcement_date (~1 week prior); supply-concession studies may condition on the
     announcement but measure returns around auction_date."""
+    if isinstance(types, str):  # footgun class: "Note" -> ['N','o','t','e']
+        types = [types]
     types = list(types)
     cache = _day_cache("ustauct", [*types, start])
     if cache and os.path.exists(cache):

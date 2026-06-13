@@ -34,6 +34,15 @@ def test_cboe_depth_and_grid():
     assert (v > 5).all() and (v < 150).all()  # sane vol-index range
 
 
+def test_bare_string_arg_not_iterated():
+    """Footgun class that crashed the 2026-06-13 hedging-pressure run: a smith passing a
+    bare string ('VVIX') instead of a list got it iterated to ['V','V','I','X']. Every
+    name/symbol/type adapter must accept a single string. Network-light (cboe only)."""
+    from sdk.adapters import cboe_index
+    p = cboe_index("VVIX")
+    assert list(p.columns) == ["VVIX"], f"bare string iterated: got {list(p.columns)}"
+
+
 def test_funding_rates_daily():
     from sdk.adapters import funding_rates
     f = funding_rates(symbols=("BTCUSDT",))
