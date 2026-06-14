@@ -274,13 +274,14 @@ SPEC = StrategySpec(
         "holdout+MCPT pass. Gen universes disjoint from search by sector or cap tier."),
     load_data=load_data,
     signal=signal,
-    default_params={},
+    default_params={"borrow_floor": 5_000_000.0},   # PRIMARY = $5M floor (prereg-amihud-borrow-promotion)
     grid={
-        "default": {},
-        "short_n10": {"n_short": 10},
+        "default": {},                              # inherits borrow_floor=5M (the verdict cell)
+        "floor_3m": {"borrow_floor": 3_000_000.0},  # floor-value robustness (the new DOF)
+        "floor_8m": {"borrow_floor": 8_000_000.0},
+        "short_n10": {"n_short": 10},               # v3 structural robustness, floor ON
         "short_n25": {"n_short": 25},
-        "untranched": {"n_tranches": 1},   # parent's single-date monthly path (diagnostic)
-        "amihud_lb126": {"amihud_lb": 126},
+        "untranched": {"n_tranches": 1},            # v3 tranching diagnostic, floor ON
     },
     scope="broad",
     generalization_universes=list(GEN_UNIVERSES.keys()),

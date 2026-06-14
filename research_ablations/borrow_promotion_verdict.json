@@ -1,0 +1,159 @@
+{
+  "id": "amihud_v3_borrow_ablation",
+  "family": "illiquidity_premium",
+  "title": "Amihud illiquidity premium \u2014 deployable-short v3: long illiquid quintile / short top-15 liquid per size tercile + residual IWM trim, rebuilt as 3 overlapping monthly tranches",
+  "markets": [
+    "US_smallmid_equity"
+  ],
+  "tier": "PROMOTE",
+  "promote_bar": 0.987,
+  "n_families": 60,
+  "dsr": 1.0,
+  "median_cpcv": 2.200122341591253,
+  "pbo": 0.45423465423465426,
+  "deployment_passed": true,
+  "deploy_peak": 460,
+  "deploy_sectors": 5,
+  "deploy_reasons": [],
+  "hedge_share": -0.431,
+  "hedge_tickers": [
+    "IWM"
+  ],
+  "search_sharpe": 2.21,
+  "holdout_sharpe": 1.441,
+  "holdout_pass": true,
+  "holdout_reasons": [],
+  "full_sharpe": 1.987,
+  "full_maxdd": -0.288,
+  "n_trades": 603,
+  "beta_to_universe": 0.49,
+  "selection_alpha_sharpe": 1.9422738680383815,
+  "beta_confound": false,
+  "regime_split": {
+    "evaluated": true,
+    "pass": true,
+    "sharpe_calm": 2.436,
+    "sharpe_turbulent": 2.093,
+    "n_calm": 2463,
+    "n_turbulent": 2716,
+    "reason": null
+  },
+  "regime_coverage": {
+    "coverage": 0.862,
+    "ok": true,
+    "note": null
+  },
+  "stage1_pass": true,
+  "confirmed": true,
+  "scope": "broad",
+  "mcpt": {
+    "n_ran": 50,
+    "early_stop": false,
+    "benchmark_relative": true,
+    "real_stat": 0.919,
+    "perm_mean": -4.24,
+    "perm_p95": -4.058,
+    "perm_max": -4.041,
+    "p_value": 0.0196,
+    "pass": true
+  },
+  "mcpt_pass": true,
+  "needs_confirmation": null,
+  "generalization": {
+    "smallmid_energy_materials_utils": 1.2,
+    "smallmid_defensive_comms_re": 0.63,
+    "largecap_all_sectors": 1.15
+  },
+  "generalization_note": "stage-2 CONFIRMED: 3/3 untouched universes positive OOS (100%) -> generalises",
+  "PASSED_ALL_GATES": true,
+  "registry_recorded": true,
+  "soft_expectations": null,
+  "soft_expectations_pass": null,
+  "holdout_burned": false,
+  "config_hash": "7386f5a2be601157",
+  "module_file": "/root/crucible/research_ablations/amihud_v3_borrow_ablation.py",
+  "module_sha": "b85e396596aa",
+  "repo_sha": "f505f369be81",
+  "default_params": {
+    "borrow_floor": 5000000.0
+  },
+  "holdout_start": "2022-01-01",
+  "grid_sharpes": {
+    "default": 2.21,
+    "floor_3m": 2.129,
+    "floor_8m": 1.969,
+    "short_n10": 2.214,
+    "short_n25": 2.251,
+    "untranched": 2.161
+  },
+  "diagnostics": {
+    "pbo": {
+      "value": 0.45423465423465426,
+      "n_combos": 12870,
+      "n_configs": 6,
+      "n_splits": 16,
+      "labels": [
+        "default",
+        "floor_3m",
+        "floor_8m",
+        "short_n10",
+        "short_n25",
+        "untranched"
+      ]
+    },
+    "dsr_grid": 1.0,
+    "dsr_source": "grid",
+    "dsr_n_trials_raw": null,
+    "dsr_n_trials_effective": null,
+    "grid_participation_ratio": null,
+    "search_burden": null,
+    "ticker_concentration": {
+      "top_group_frac": 0.048198156088384694,
+      "n_tickers": 461
+    },
+    "regime": {
+      "regime_sharpe": {
+        "?": 3.0480812858808863,
+        "bear_calm": 3.0000000000000004,
+        "bear_vol": 1.577718967273782,
+        "bull_calm": 2.90808391148645,
+        "bull_vol": 3.0286275273231076
+      },
+      "regime_net": {
+        "?": 2507456.972172782,
+        "bear_calm": 17250.08463541756,
+        "bear_vol": 620965.6719372517,
+        "bull_calm": 3575645.0648603155,
+        "bull_vol": 2678258.7509763977
+      },
+      "regime_counts": {
+        "bull_vol": 193,
+        "bull_calm": 166,
+        "?": 68,
+        "bear_vol": 65,
+        "bear_calm": 1
+      },
+      "regime_timeshare": {
+        "?": 0.13793103448275862,
+        "bear_calm": 0.002028397565922921,
+        "bear_vol": 0.13184584178498987,
+        "bull_calm": 0.3367139959432049,
+        "bull_vol": 0.39148073022312374
+      },
+      "min_regime_sharpe": 1.577718967273782,
+      "max_regime_pnl_frac": 0.3804049095085339,
+      "regime_concentration_ratio": 1.9340300025250527,
+      "per_regime_expectancy_ok": true
+    },
+    "n_obs": 5479,
+    "cpcv": {
+      "n_paths": 15,
+      "median_sharpe": 2.200122341591253,
+      "frac_positive": 1.0,
+      "min": 1.7884840605638475,
+      "max": 2.759115605982885,
+      "n_groups": 6,
+      "k_test": 2
+    }
+  }
+}
