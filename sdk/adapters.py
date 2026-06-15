@@ -534,7 +534,63 @@ def binance_klines(symbols=CRYPTO_MAJORS, market="perp", start="2019-01-01", int
     return panel.sort_index()
 
 
+_BYBIT_FUNDING = "https://api.bybit.com/v5/market/funding/history"
+
+
+def bybit_funding(symbols=("BTCUSDT", "ETHUSDT"), start="2020-01-01") -> pd.DataFrame:
+    """Bybit perp funding history (free public v5 API), DAILY sum of the 8h prints per symbol.
+    SAME sign convention + daily-accrual shape as funding_rates() (Binance, positive = longs pay
+    shorts) -> pair them for CROSS-EXCHANGE funding DISPERSION: bybit_funding - funding_rates =
+    localized crowding / venue dislocation (a positioning signal Binance-alone can't see).
+    Paginated backward (200 prints/page); day-cached; footgun-guarded."""
+    import time as _t
+    if isinstance(symbols, str):  # footgun class: 'BTCUSDT' -> per-character iteration
+        symbols = [symbols]
+    cache = _day_cache("bybit_funding", [*symbols])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)
+    start_ms = int(pd.Timestamp(start).timestamp() * 1000)
+    out, complete = {}, True
+    for sym in symbols:
+        rows, end = [], None
+        while True:
+            u = f"{_BYBIT_FUNDING}?category=linear&symbol={sym}&limit=200"
+            if end is not None:
+                u += f"&endTime={end}"
+            try:
+                r = json.loads(_http_get(u, timeout=40))
+            except Exception:
+                complete = False  # transient fetch error -> do NOT cache a truncated series
+                break
+            lst = (r.get("result") or {}).get("list") or []  # descending (newest first)
+            if not lst:
+                break
+            rows += lst
+            oldest = int(lst[-1]["fundingRateTimestamp"])
+            if oldest <= start_ms or len(lst) < 200:
+                break
+            end = oldest - 1
+            _t.sleep(0.25)
+        if not rows:
+            continue
+        s = pd.Series({pd.Timestamp(int(x["fundingRateTimestamp"]), unit="ms"): float(x["fundingRate"])
+                       for x in rows}).sort_index()
+        s = s[~s.index.duplicated(keep="last")]
+        out[sym] = s.resample("1D").sum()
+    panel = pd.DataFrame(out).sort_index()
+    if cache and complete and not panel.empty:  # only cache a COMPLETE pull (flake self-heals next run)
+        try:
+            tmp = cache + ".tmp"
+            panel.to_parquet(tmp)
+            os.replace(tmp, cache)
+        except OSError:
+            pass
+    return panel
+
+
 # Coin Metrics COMMUNITY on-chain/network metrics ($0, no key, CC BY-NC -> PERSONAL RESEARCH ONLY).
+# STABLECOIN FLOWS (capital in/out of crypto) are a FREEBIE here: coinmetrics_metrics(("usdt","usdc"),
+# ("SplyCur",)) -> USDT supply 2014+ (~$193B), USDC 2018+ (~$68B); growth = inflow, contraction = outflow.
 # Asset tickers are lowercase CM names (btc/eth/sol/...). Common FREE community metrics:
 #   PriceUSD, AdrActCnt (active addresses), TxCnt, TxTfrValAdjUSD (adjusted transfer value USD),
 #   FeeTotUSD, SplyCur (current supply), CapRealUSD (realized cap), CapMrktCurUSD (market cap),

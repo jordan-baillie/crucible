@@ -104,3 +104,19 @@ def test_coinmetrics_bare_string_guard():
     from sdk import adapters
     src = inspect.getsource(adapters.coinmetrics_metrics)
     assert "isinstance(assets, str)" in src and "isinstance(metrics, str)" in src
+
+
+@pytest.mark.network
+def test_bybit_funding_and_cross_exchange_dispersion():
+    from sdk.adapters import bybit_funding, funding_rates
+    by = bybit_funding(("BTCUSDT",))
+    assert not by.empty and "BTCUSDT" in by.columns
+    bi = funding_rates(("BTCUSDT",))
+    disp = (by["BTCUSDT"] - bi["BTCUSDT"]).dropna()
+    assert len(disp) > 100  # overlapping daily history for a cross-exchange spread
+
+
+def test_bybit_funding_bare_string_guard():
+    import inspect
+    from sdk import adapters
+    assert "isinstance(symbols, str)" in inspect.getsource(adapters.bybit_funding)
