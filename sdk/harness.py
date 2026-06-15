@@ -963,6 +963,14 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     soft_pass = None if soft is None else all(r["pass"] is True for r in soft)
 
     grid_sharpes = {label: round(_sharpe(r), 3) for label, r in grid.items()}
+    # Stationary-bootstrap dependence-robust drawdown/Calmar CI (finding #50): the ONE non-redundant
+    # block-bootstrap piece (MaxDD/Calmar have no Lo/DSR/CPCV analogue). DIAGNOSTIC only, never a gate;
+    # Sharpe-CI (redundant) + Bai-Perron (underpowered on daily returns) deliberately NOT built.
+    try:
+        from sdk.stats import bootstrap_drawdown_ci
+        _dd_ci = bootstrap_drawdown_ci(full_ret)
+    except Exception:
+        _dd_ci = None
 
     verdict = {
         "id": spec.id, "family": spec.family, "title": spec.title, "markets": spec.markets,
@@ -991,7 +999,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "holdout_burned": holdout_burned, "config_hash": cfg_hash,
         # O1 — reproducibility + gate diagnostics
         **_provenance(spec),
-        "grid_sharpes": grid_sharpes,
+        "grid_sharpes": grid_sharpes, "drawdown_ci": _dd_ci,
         "diagnostics": {k: diag.get(k) for k in (
             "pbo", "dsr_grid", "dsr_source", "dsr_n_trials_raw", "dsr_n_trials_effective",
             "grid_participation_ratio", "search_burden", "ticker_concentration",

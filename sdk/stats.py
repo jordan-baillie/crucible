@@ -139,3 +139,76 @@ def split_holdout(r, holdout_start: str):
     """(search, holdout) split of a DatetimeIndex returns series at the quarantine date."""
     r = pd.Series(r).dropna()
     return r[r.index < holdout_start], r[r.index >= holdout_start]
+
+
+# --- Stationary-bootstrap drawdown/Calmar CIs (prereg-drawdown-ci diagnostic; design §3/finding #50).
+#     The ONE non-redundant piece of the block-bootstrap idea: MaxDD/Calmar are path-dependent
+#     functionals with NO closed-form SE and no Lo/DSR/CPCV analogue. Sharpe-CI is redundant (Lo+DSR+
+#     CPCV) and Bai-Perron is underpowered on daily returns -> both deliberately NOT built. DIAGNOSTIC
+#     only (dependence-robust worst-case drawdown for the deploy decision), never a gate.
+def politis_white_block_length(x, c: float = 2.0) -> float:
+    """Politis-White (2004) automatic optimal mean block length for the stationary bootstrap:
+    b_opt = (2*G^2/D)^(1/3) * N^(1/3), flat-top-windowed autocovariances with auto truncation.
+    Verified: AR(1) rho=0.1,N=2520 -> ~4.9 (worked example ~4.7); white noise -> 1; rho=0.5 -> ~16."""
+    x = np.asarray(pd.Series(x).dropna(), float)
+    n = len(x)
+    if n < 16:
+        return 1.0
+    var = float(((x - x.mean()) ** 2).mean())
+    if var <= 0:
+        return 1.0
+    KN = max(5, int(np.sqrt(np.log10(n))))
+    thr = c * np.sqrt(np.log10(n) / n)
+    kmax = min(n // 2, int(2 * np.sqrt(n)) + KN + 2)
+    rho = [_autocorr(x, k) for k in range(1, kmax)]
+    m = 1
+    for i in range(len(rho)):
+        if all(abs(rho[i + j]) < thr for j in range(KN) if i + j < len(rho)):
+            m = i + 1
+            break
+    M = min(2 * m, n // 2)
+
+    def _flat(t):
+        a = abs(t)
+        return 1.0 if a <= 0.5 else (2 * (1 - a) if a < 1 else 0.0)
+
+    g0 = var + 2 * sum(_flat(k / M) * var * rho[k - 1] for k in range(1, M + 1))
+    G = 2 * sum(_flat(k / M) * k * var * rho[k - 1] for k in range(1, M + 1))
+    D = 2 * g0 ** 2
+    b = (2 * G ** 2 / D) ** (1 / 3) * n ** (1 / 3) if (D > 0 and G != 0) else 1.0
+    return float(max(1.0, min(b, n ** (1 / 3) * 4)))
+
+
+def bootstrap_drawdown_ci(returns, B: int = 400, seed: int = 0):
+    """Stationary-bootstrap (Politis-Romano) dependence-robust CI for MAX DRAWDOWN + Calmar. Returns
+    the in-sample point MaxDD plus the bootstrap WORST-CASE (5th-pctile) MaxDD + median Calmar; the
+    block bootstrap preserves the vol-clustering/serial dependence that drives drawdown magnitude (an
+    IID bootstrap would understate it). Diagnostic only. None if <120 obs."""
+    x = np.asarray(pd.Series(returns).dropna(), float)
+    n = len(x)
+    if n < 120:
+        return None
+    b = politis_white_block_length(x)
+    p = 1.0 / max(b, 1.0)
+    rng = np.random.default_rng(seed)
+    mdds, cals = [], []
+    for _ in range(B):
+        idx = np.empty(n, dtype=np.int64)
+        i = int(rng.integers(n))
+        newblock = rng.random(n) < p
+        starts = rng.integers(0, n, size=n)
+        for t in range(n):
+            idx[t] = i
+            i = int(starts[t]) if newblock[t] else (i + 1) % n
+        path = x[idx]
+        eq = np.cumprod(1.0 + path)
+        mdd = float((eq / np.maximum.accumulate(eq) - 1.0).min())
+        mdds.append(mdd)
+        ann = float(path.mean()) * 252.0
+        cals.append(ann / abs(mdd) if mdd < 0 else float("inf"))
+    fin = [cc for cc in cals if np.isfinite(cc)]
+    return {"maxdd_point": round(maxdd(returns), 3),
+            "maxdd_worst_p05": round(float(np.percentile(mdds, 5)), 3),
+            "maxdd_median": round(float(np.median(mdds)), 3),
+            "calmar_median": (round(float(np.median(fin)), 2) if fin else None),
+            "block_length": round(b, 1), "n_boot": B}
