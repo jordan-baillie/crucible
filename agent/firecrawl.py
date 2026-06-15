@@ -8,10 +8,14 @@ Both feed the SAME wiki-grounded Claude-Max distillation. Additive + graceful: a
 to a no-op and never breaks the nightly scout. Cost: ~2 credits/research-search + ~5 credits/deep dive
 (capped at 2/run) -> ~18 credits/run.
 
-NOTE: FIRE-1 `/agent` is NOT available on this account (fails 'Refusal: Agent reached max credits' at
-0 credits used, any cap) — so deep extraction uses `/scrape` JSON-mode, which the docs recommend for
-known URLs anyway (synchronous, cheaper, ideal for open arXiv full text). Key: env FIRECRAWL_API_KEY
--> ~/.pi/agent/settings.json firecrawl.apiKey.
+NOTE: deep extraction uses `/scrape` JSON-mode (synchronous, ~5 credits, the docs-recommended tool for
+KNOWN open arXiv URLs). FIRE-1 `/agent` IS available on this plan (account healthy: ~5000 credits/mo)
+but is far more expensive and unnecessary here: it does a pre-flight cost estimate and refuses
+('Refusal: Agent reached max credits', 0 used) whenever maxCredits < that estimate, and it estimates
+academic-research tasks at >200 credits each (>=40x /scrape) — too costly for routine scout use, and its
+autonomous URL-discovery is redundant with our Brave+Firecrawl search layer (which already yields the
+URLs). Reserve /agent only for a rare autonomous no-URL task worth ~200+ credits. Key: env
+FIRECRAWL_API_KEY -> ~/.pi/agent/settings.json firecrawl.apiKey.
 """
 import json
 import os
