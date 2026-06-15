@@ -75,3 +75,23 @@ def test_live_caches_load():
     assert len(s) > 1000  # the Alpaca shortable snapshot
     dv = cm.dollar_volume_map()
     assert len(dv) > 1000  # SEP universe dollar-volume map
+
+
+def test_harness_deployability_filter_demotes(monkeypatch):
+    """The live-gate filter (pre-reg §3): a borrow-infeasible short leg is NOT deployable
+    (candidate=False -> borrow-only path, no signal() call needed)."""
+    from sdk import cost_model as cm
+    from sdk import harness as H
+    cm.shortable_set.cache_clear()
+    monkeypatch.setattr(cm, "shortable_set", lambda *a, **k: frozenset({"OK"}))
+    trades = [{"ticker": "NOSHORT", "position_value": -1000, "hold_days": 50},
+              {"ticker": "OK", "position_value": -100, "hold_days": 5}]
+    out = H._deployability_filter(spec=None, panel=None, search_trades=trades, candidate=False)
+    assert out["deployable"] is False
+    assert out["borrow_feasible"] is False
+    assert any("un-borrowable" in r or "DEPLOYABILITY" in r for r in out["reasons"])
+    # a long-only book is always deployable on the borrow axis
+    ok = H._deployability_filter(spec=None, panel=None,
+                                search_trades=[{"ticker": "X", "position_value": 1000, "hold_days": 5}],
+                                candidate=False)
+    assert ok["deployable"] is True

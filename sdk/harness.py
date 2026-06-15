@@ -439,6 +439,62 @@ def _run_expectations(spec: StrategySpec, ctx: dict) -> list | None:
     return out
 
 
+def _reprice_holdout_sharpe(spec, panel):
+    """Re-run signal() with net_of_cost swapped for the FROZEN central liquidity ladder (borrow-
+    infeasible shorts zeroed) and return (holdout Sharpe, repriced_via_kit). One extra signal()
+    call — used only on stage-1 candidates. Patches BOTH the strategy module's own net_of_cost
+    reference and the kit's (covers both import styles); restores in finally."""
+    import sys as _sys
+    from sdk import signal_kit
+    from sdk import cost_model as cm
+    mod = _sys.modules.get(getattr(spec.signal, "__module__", ""), None)
+    patched = cm.make_net_of_cost(cm.LADDER_CENTRAL)
+    saved_mod = getattr(mod, "net_of_cost", None) if mod is not None else None
+    saved_kit = signal_kit.net_of_cost
+    if mod is not None and saved_mod is not None:
+        mod.net_of_cost = patched
+    signal_kit.net_of_cost = patched
+    try:
+        r, _ = spec.signal(panel, **spec.default_params)
+    except Exception:
+        return None, (saved_mod is not None)
+    finally:
+        if mod is not None and saved_mod is not None:
+            mod.net_of_cost = saved_mod
+        signal_kit.net_of_cost = saved_kit
+    r = pd.Series(r).dropna()
+    if r.empty:
+        return None, (saved_mod is not None)
+    r.index = pd.to_datetime(r.index)
+    ho = r[r.index >= pd.Timestamp(spec.holdout_start)]
+    return (_sharpe(ho) if len(ho) > 5 else None), (saved_mod is not None)
+
+
+def _deployability_filter(spec, panel, search_trades, candidate: bool) -> dict:
+    """Cost-aware deployability (pre-reg cost-aware-deployability-gate, FROZEN 2026-06-15): a PASS
+    must be (1) borrow-feasible AND (2) keep a positive net-of-liquidity-cost holdout Sharpe.
+    Borrow is cheap (trade ledger); the re-priced holdout (one extra signal()) is computed ONLY
+    for `candidate` runs (already cleared holdout+deployment) so most FAILs pay nothing. A strategy
+    that does not use the kit's net_of_cost can't be re-priced for liquidity -> borrow-only (flagged)."""
+    from sdk import cost_model as cm
+    bv = cm.borrow_verdict(search_trades)
+    out = {"deployable": True, "borrow_feasible": bv["borrow_feasible"],
+           "short_infeasible_share": bv["short_infeasible_share"],
+           "repriced_holdout_sharpe": None, "repriced_via_kit": None, "reasons": []}
+    if not bv["borrow_feasible"]:
+        out["reasons"].append("DEPLOYABILITY: " + bv["reason"])
+    if candidate:
+        rh, via_kit = _reprice_holdout_sharpe(spec, panel)
+        out["repriced_holdout_sharpe"] = (round(rh, 3) if rh is not None else None)
+        out["repriced_via_kit"] = bool(via_kit)
+        if via_kit and (rh is None or rh <= 0):
+            out["reasons"].append(
+                f"DEPLOYABILITY: net-of-liquidity-cost holdout Sharpe "
+                f"{('n/a' if rh is None else round(rh, 2))} <= 0 — edge does not survive realistic per-name cost")
+    out["deployable"] = (len(out["reasons"]) == 0)
+    return out
+
+
 def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     """Run one pre-registered hypothesis through ALL rails. Returns the verdict dict."""
     panel = spec.load_data()
@@ -574,6 +630,9 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     regime_split = _regime_split(search, _price_matrix(panel))
     # Stage 2a Part B: were the ledger regime gates even evaluable?
     regime_cov = _regime_coverage(search_trades)
+    # Cost-aware deployability (pre-reg FROZEN 2026-06-15): borrow-feasibility (cheap) always;
+    # net-of-liquidity-cost holdout re-price only for candidates that already cleared holdout+deploy.
+    deploy_filter = _deployability_filter(spec, panel, search_trades, bool(h_pass and dep["passed"]))
 
     with FileLock("fdr-registry", ttl=120):
         n_fam = ri.distinct_families(extra=spec.family)
@@ -598,6 +657,10 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             stage1_pass = False
             h_reasons = list(h_reasons) + [
                 f"REGIME-UNSTAMPED: {regime_cov['note']} — ledger regime gates were vacuous, demoted"]
+        # Cost-aware deployability demotion (same mechanics; makes an un-deployable PASS unrepresentable)
+        if stage1_pass and not deploy_filter["deployable"]:
+            stage1_pass = False
+            h_reasons = list(h_reasons) + deploy_filter["reasons"]
         registry_recorded = True
         try:
             ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": tier,
@@ -659,6 +722,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "beta_to_universe": decomp.get("beta_to_universe"),
         "selection_alpha_sharpe": decomp.get("selection_alpha_sharpe"), "beta_confound": beta_confound,
         "regime_split": regime_split, "regime_coverage": regime_cov,
+        "deployability": deploy_filter,
         "stage1_pass": stage1_pass, "confirmed": gen_confirmed, "scope": getattr(spec, "scope", "broad"),
         "mcpt": mcpt_res, "mcpt_pass": mcpt_pass,
         "needs_confirmation": (None if not stage1_pass or passed_all else
