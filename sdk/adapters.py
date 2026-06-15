@@ -467,6 +467,73 @@ def funding_rates(symbols=("BTCUSDT", "ETHUSDT"), source="binance") -> pd.DataFr
     return panel
 
 
+# Liquid USDT-perp majors (deep funding+kline history). Smiths should still require >=N days of
+# history per coin (cross-section grows over time as coins list; delisted coins drop out).
+CRYPTO_MAJORS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
+                "DOGEUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT", "DOTUSDT", "TRXUSDT")
+
+_KLINE_PERP = "https://fapi.binance.com/fapi/v1/klines"
+_KLINE_SPOT = "https://api.binance.com/api/v3/klines"
+
+
+def binance_klines(symbols=CRYPTO_MAJORS, market="perp", start="2019-01-01", interval="1d") -> pd.DataFrame:
+    """Daily OHLCV klines from Binance public API ($0, deep history per listing). market='perp'
+    (USDT-margined perps, fapi) or 'spot' (api). Returns a MultiIndex-column panel (symbol, field)
+    with fields: open/high/low/close/volume/quote_volume/trades/taker_buy_quote.
+
+    The crypto substrate beyond funding+spot: basis (perp_close vs spot_close), momentum/reversal,
+    realized vol (from close or high/low), liquidity (quote_volume), and a deep-history FLOW/
+    positioning proxy (taker_buy_quote / quote_volume = taker-buy fraction). Pair with funding_rates()
+    for the carry leg. NOTE: Binance OI + long/short-ratio endpoints are LAST-30-DAYS only -> NOT
+    backtestable (those positioning signals are DATA-GATED for deep history); taker_buy_quote is the
+    free deep-history flow substitute.
+    """
+    import time as _t
+    if isinstance(symbols, str):  # footgun class: 'BTCUSDT' -> per-character iteration
+        symbols = [symbols]
+    base = _KLINE_PERP if market == "perp" else _KLINE_SPOT
+    cache = _day_cache("klines", [market, interval, *symbols])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)
+    start_ms = int(pd.Timestamp(start).timestamp() * 1000)
+    frames = {}
+    for sym in symbols:
+        rows, s = [], start_ms
+        while True:
+            u = f"{base}?symbol={sym}&interval={interval}&startTime={s}&limit=1000"
+            try:
+                batch = json.loads(_http_get(u, timeout=40))
+            except Exception:
+                break  # unlisted symbol on this venue / transient -> skip (cross-section tolerates gaps)
+            if not batch:
+                break
+            rows += batch
+            if len(batch) < 1000:
+                break
+            s = batch[-1][0] + 1
+            _t.sleep(0.25)  # public rate-limit politeness
+        if not rows:
+            continue
+        df = pd.DataFrame(rows).iloc[:, [0, 1, 2, 3, 4, 5, 7, 8, 10]]
+        df.columns = ["t", "open", "high", "low", "close", "volume", "quote_volume", "trades", "taker_buy_quote"]
+        df["date"] = pd.to_datetime(df["t"], unit="ms")
+        df = df.drop(columns="t").set_index("date").astype(float)
+        df = df[~df.index.duplicated(keep="last")]
+        frames[sym] = df
+    if not frames:
+        return pd.DataFrame()
+    panel = pd.concat(frames, axis=1)
+    panel.columns.names = ["symbol", "field"]
+    if cache:
+        try:
+            tmp = cache + ".tmp"
+            panel.to_parquet(tmp)
+            os.replace(tmp, cache)
+        except OSError:
+            pass
+    return panel.sort_index()
+
+
 def treasury_auctions(types=("Note", "Bond"), start="2010-01-01") -> pd.DataFrame:
     """US Treasury auction calendar/history from the free TreasuryDirect API (depth: 1979+).
     Long DataFrame [auction_date, announcement_date, issue_date, sec_type, term, cusip,

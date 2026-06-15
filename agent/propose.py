@@ -25,11 +25,15 @@ def _focus() -> str:
         "- Venue: spot + PERPETUAL futures on Binance/Bybit; the LIQUID MAJORS (BTC/ETH/SOL/BNB/XRP and other deep perps).\n"
         "- Crypto deployability: perps short FREELY (NO stock-borrow constraint — a crypto long/short IS deployable),\n"
         "  ~20bps round-trip taker cost, <=2x leverage, no options. Set market='crypto', retail_tradable_5k='yes'.\n"
-        "- Data reachable: funding_rates() (Binance perp funding, majors, 2019+); yf_panel (spot closes for majors).\n"
+        "- Data reachable (adapters only — NEVER raw I/O): funding_rates() (perp funding, majors, 2019+);\n"
+        "  binance_klines(CRYPTO_MAJORS, market='perp'|'spot') = daily OHLCV + volume + trades + TAKER_BUY_QUOTE\n"
+        "  (deep-history flow/positioning proxy) for 12 liquid majors -> basis (perp vs spot), momentum/reversal,\n"
+        "  realized vol, liquidity tiers, taker-flow crowding; yf_panel for extra spot. ⚠ Binance OI + long/short\n"
+        "  ratio are LAST-30-DAYS only (NOT backtestable -> DATA-GATED); use taker_buy_quote for deep-history flow.\n"
         "- DORMANT — do NOT just re-propose delta-neutral FUNDING CARRY: funding has compressed to ~0/negative in 2025-26\n"
         "  (see markets/crypto.md); it earns nothing today. Naive crypto MOMENTUM has FAILED before.\n"
         "- LOOK BEYOND CARRY for something that could pay in the CURRENT regime: cross-sectional crypto factors\n"
-        "  (momentum/reversal/low-vol across coins), funding- or basis-CONDITIONAL timing, vol/term-structure,\n"
+        "  (momentum/reversal/low-vol across coins), basis- or taker-flow/crowding-CONDITIONAL timing, vol/term-structure,\n"
         "  illiquidity in alts, regime gates. PREFER conditional/combination constructions over naive single signals.\n"
     )
 

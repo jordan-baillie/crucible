@@ -63,3 +63,25 @@ def test_treasury_auctions():
     # announcement precedes auction (the point-in-time conditioning variable)
     both = a.dropna(subset=["announcement_date"])
     assert (both["announcement_date"] <= both["auction_date"]).mean() > 0.99
+
+
+@pytest.mark.network
+def test_binance_klines_perp_and_basis():
+    from sdk.adapters import binance_klines, CRYPTO_MAJORS
+    assert len(CRYPTO_MAJORS) >= 10
+    perp = binance_klines(("BTCUSDT",), market="perp")
+    assert not perp.empty
+    fields = set(perp["BTCUSDT"].columns)
+    assert {"open", "high", "low", "close", "volume", "quote_volume", "taker_buy_quote"} <= fields
+    assert perp.index.min().year <= 2019  # deep history
+    spot = binance_klines(("BTCUSDT",), market="spot")
+    basis = (perp[("BTCUSDT", "close")] / spot[("BTCUSDT", "close")] - 1).dropna()
+    assert len(basis) > 1000  # multi-year basis series computable
+
+
+def test_binance_klines_bare_string_guard():
+    # footgun class: a bare string must NOT iterate per-character (would request 'B','T','C'...)
+    import inspect
+    from sdk import adapters
+    src = inspect.getsource(adapters.binance_klines)
+    assert "isinstance(symbols, str)" in src  # the guard is present
