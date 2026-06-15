@@ -274,7 +274,9 @@ SPEC = StrategySpec(
         "holdout+MCPT pass. Gen universes disjoint from search by sector or cap tier."),
     load_data=load_data,
     signal=signal,
-    default_params={"borrow_floor": 5_000_000.0},   # PRIMARY = $5M floor (prereg-amihud-borrow-promotion)
+    # PRIMARY = $5M floor + beta-neutralizing hedge (prereg-amihud-borrow-promotion ADDENDUM):
+    # beta_cap=0.0/hedge_cap=0.75 was the smallest hedge achieving |beta_to_universe| <= 0.2 (0.16).
+    default_params={"borrow_floor": 5_000_000.0, "beta_cap": 0.0, "hedge_cap": 0.75},
     grid={
         "default": {},                              # inherits borrow_floor=5M (the verdict cell)
         "floor_3m": {"borrow_floor": 3_000_000.0},  # floor-value robustness (the new DOF)
@@ -289,5 +291,5 @@ SPEC = StrategySpec(
     holdout_start="2022-01-01",
     deploy_max_positions=96,
     hedge_tickers=["IWM"],
-    hedge_cap=0.35,
+    hedge_cap=0.75,   # raised from 0.35 to match the beta-neutralizing hedge (declared-sleeve check)
 )
