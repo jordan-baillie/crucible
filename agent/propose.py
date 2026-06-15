@@ -14,12 +14,7 @@ def _read(p):
     return f.read_text(encoding="utf-8") if f.exists() else ""
 
 
-def _focus() -> str:
-    """Operator-directed SEARCH FOCUS (env CRUCIBLE_FOCUS), injected into every arm. Reversible:
-    unset/empty = the general retail-deployable bias; 'crypto' = hunt crypto-deployable space only."""
-    if os.environ.get("CRUCIBLE_FOCUS", "").strip().lower() != "crypto":
-        return ""
-    return (
+_CRYPTO_FOCUS = (
         "\n\n=== SEARCH FOCUS: CRYPTO (operator-directed 2026-06-15 — overrides the retail-equity bias) ===\n"
         "Propose CRYPTO-deployable strategies ONLY this run:\n"
         "- Venue: spot + PERPETUAL futures on Binance/Bybit. UNIVERSE: use binance_universe(75) for the BROAD\n"
@@ -46,7 +41,63 @@ def _focus() -> str:
         "  (momentum/reversal/low-vol/illiquidity ACROSS the broad binance_universe(75) — a real cross-section beats\n"
         "  the 12-major one), basis- or taker-flow/crowding-CONDITIONAL timing, vol/term-structure (deribit_dvol),\n"
         "  regime gates. PREFER conditional/combination constructions over naive single signals.\n"
-    )
+)
+
+
+_COMMODITIES_FOCUS = (
+    "\n\n=== SEARCH FOCUS: COMMODITY FUTURES (operator-directed 2026-06-16 — exercise the fundamentals TRIO) ===\n"
+    "Propose COMMODITY-FUTURES strategies ONLY this run, built on the now-complete conditioning TRIO\n"
+    "(PRICE + POSITIONING + FUNDAMENTALS) over the owned Databento complex:\n"
+    "- UNIVERSE: the 17 owned roots — ENERGY {CL crude, NG natgas, HO heating-oil, RB gasoline},\n"
+    "  METALS {GC gold, SI silver, HG copper, PL platinum, PA palladium}, GRAINS/OILSEEDS {ZC corn,\n"
+    "  ZS soybeans, ZW wheat, ZL soyoil, ZM soymeal}, LIVESTOCK {LE live-cattle, HE lean-hogs, GF feeder}.\n"
+    "  Use a real CROSS-SECTION (rank across roots) or a within-complex relative-value pair; a single-root\n"
+    "  timing signal is acceptable ONLY with a conditioning gate. ⚠ PA (palladium) rank-2 coverage is thin\n"
+    "  (~91%) — drop it from cross-sections or require both legs present.\n"
+    "- THE TRIO (adapters ONLY — NEVER raw I/O):\n"
+    "  (1) PRICE / TERM-STRUCTURE: fut_curve(root, n_contracts=2) -> close_1/close_2/volume_1/volume_2/\n"
+    "      symbol_1/symbol_2/days_to_roll_1. ⚠ NOT roll-adjusted: compute returns WITHIN a contract month;\n"
+    "      NEVER diff close_1 across a roll. Slope close_2/close_1 = carry/roll-yield; BASIS-MOMENTUM\n"
+    "      (Boons-Prado JF 2019) = momentum of the front-minus-back return spread (an UNTESTED frontier).\n"
+    "  (2) POSITIONING: cot_positioning(roots, start_year=2010) -> {root}_comm_net/_noncomm_net/_oi, weekly.\n"
+    "      ⚠ indexed by the Friday RELEASE date (Tue data + 3d) — NEVER join on the Tuesday. HEDGING-PRESSURE\n"
+    "      premium (Basu-Miffre) = comm_net/oi: commercials are the hedgers; their net position predicts the\n"
+    "      risk premium speculators earn for absorbing it.\n"
+    "  (3) FUNDAMENTALS (NEW 2026-06-16 — the leg that was missing): eia_series(series_id) for ENERGY\n"
+    "      inventories/production (e.g. 'PET.WCESTUS1.W'=US crude stocks weekly; natgas storage) and\n"
+    "      usda_nass(commodity, statisticcat_desc='STOCKS') for GRAIN stocks/production. STORAGE THEORY:\n"
+    "      high inventory vs seasonal norm -> contango -> LOW front expected return (underweight/short);\n"
+    "      low inventory -> backwardation -> HIGH expected return (overweight/long). ⚠ PIT: condition on the\n"
+    "      report RELEASE date (EIA weekly ~Wed; USDA release calendar — NOT the survey reference period like\n"
+    "      'FIRST OF MAR'); usda 'Value' is a comma-formatted string; NASS query caps at 50k rows.\n"
+    "- DEPLOYABILITY: commodity futures are NATIVELY retail-tradable at ~$5K via IB MICRO contracts (MCL crude,\n"
+    "  MGC gold, micro grains; standard ZC/ZS/ZW in small size) — longable AND shortable with NO borrow\n"
+    "  constraint (unlike equity shorts), scalable to size. Set market='futures', retail_tradable_5k='yes'.\n"
+    "- KNOWN (wiki markets/futures.md — do NOT just re-propose): cross-asset TREND is VALIDATED as a crisis\n"
+    "  hedge (boreas-tsmom), not a fresh idea; DM FX/bond CARRY is DEAD (boreas-carry-fxbond). COMMODITY\n"
+    "  carry / basis-momentum / hedging-pressure / storage were UNTESTED for lack of term-structure +\n"
+    "  fundamentals data — that data now EXISTS, so these are the OPEN frontier. PREFER a CONDITIONAL /\n"
+    "  COMBINATION construction (e.g. basis-momentum GATED by inventory, or hedging-pressure CONDITIONED on\n"
+    "  storage state) over a naive single signal — the trio is most powerful when the legs are combined.\n"
+)
+
+
+# Operator-directed search focuses (env CRUCIBLE_FOCUS). Aliases map to one block; unknown/empty -> no
+# steer (general retail-deployable bias). Generator-only: injected into every arm's prompt, the rails /
+# gate stack are untouched (bad ideas still burn regardless of where they came from). Add a focus here.
+_FOCUSES = {
+    "crypto": _CRYPTO_FOCUS,
+    "commodities": _COMMODITIES_FOCUS,
+    "commodity": _COMMODITIES_FOCUS,
+    "futures": _COMMODITIES_FOCUS,
+}
+
+
+def _focus() -> str:
+    """Operator-directed SEARCH FOCUS (env CRUCIBLE_FOCUS), injected into every arm. Reversible:
+    unset/empty/unknown = the general retail-deployable bias; otherwise dispatch to a focus block.
+    Supported: 'crypto' (crypto-deployable), 'commodities'/'commodity'/'futures' (commodity-futures trio)."""
+    return _FOCUSES.get(os.environ.get("CRUCIBLE_FOCUS", "").strip().lower(), "")
 
 
 def _read_tail(p, max_chars: int):
