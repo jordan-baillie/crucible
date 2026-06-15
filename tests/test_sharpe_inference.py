@@ -63,22 +63,41 @@ def test_psr_monotonic_in_n():
     assert math.isfinite(min_track_record_length(r, 0.0, 0.95)) or True  # finite or inf, never crash
 
 
-# ---------------------------------------------------------------- the Check is inert today (date-gated)
-def test_sharpe_inference_check_is_annotate_only_today():
-    from sdk.harness import _gc_sharpe_inference
+# ---------------------------------------------------------------- the Check is ACTIVE (calibrated 2026-06-15)
+def _ar1_ctx(phi, drift, seed, n=1500):
     from sdk.gates import GateContext
-    rng = np.random.default_rng(7)
-    n, phi = 1500, 0.6
+    rng = np.random.default_rng(seed)
     e = rng.normal(0, 0.01, n); x = np.zeros(n)
     for t in range(1, n):
         x[t] = phi * x[t - 1] + e[t]
     idx = pd.bdate_range(end="2026-06-01", periods=n)
-    ctx = GateContext(spec=None, panel=None, price_matrix=None,
-                      search=pd.Series(x + 0.0003, index=idx), search_trades=[],
-                      holdout_pass=True, deploy_candidate=True)
-    res = _gc_sharpe_inference(ctx)
+    return GateContext(spec=None, panel=None, price_matrix=None,
+                       search=pd.Series(x + drift, index=idx), search_trades=[],
+                       holdout_pass=True, deploy_candidate=True)
+
+
+def test_sharpe_inference_demotes_serial_inflated_weak_book():
+    """Heavily autocorrelated (phi=0.6) + weak drift -> deflation<0.70 AND Lo-adj Sharpe<0.5 -> DEMOTE.
+    The gate is ACTIVE (active_from amended to 2026-06-15 after calibration)."""
+    from sdk.harness import _gc_sharpe_inference
+    res = _gc_sharpe_inference(_ar1_ctx(phi=0.6, drift=0.0003, seed=7))
     assert res.name == "sharpe_inference" and res.failure_mode == 3 and res.evaluated is True
-    assert res.metrics["lo_deflation_factor"] < 1.0      # serial correlation recorded
-    assert res.active is False and res.demotes is False   # date-gated 2026-06-29 -> inert TODAY
-    # JSON-safe metrics (no nan/inf)
+    assert res.metrics["lo_deflation_factor"] < 0.70 and res.metrics["serial_inflated"] is True
+    assert res.active is True and res.passed is False and res.demotes is True   # LIVE: it demotes
     assert res.metrics["min_track_record_len"] is None or isinstance(res.metrics["min_track_record_len"], float)
+
+
+def test_sharpe_inference_spares_strong_book_despite_autocorrelation():
+    """Two-pronged rule: heavy autocorrelation BUT a strong deflated edge (high drift) is NOT demoted
+    (the crypto_funding_carry case from calibration: deflation 0.375, Lo-adj 3.64, spared)."""
+    from sdk.harness import _gc_sharpe_inference
+    res = _gc_sharpe_inference(_ar1_ctx(phi=0.6, drift=0.004, seed=11))
+    assert res.metrics["lo_deflation_factor"] < 0.70          # heavily autocorrelated
+    assert res.metrics["lo_adjusted_sharpe"] >= 0.5           # ...but deflated edge survives
+    assert res.passed is True and res.demotes is False        # spared
+
+
+def test_sharpe_inference_spares_clean_book():
+    from sdk.harness import _gc_sharpe_inference
+    res = _gc_sharpe_inference(_ar1_ctx(phi=0.0, drift=0.0005, seed=2))   # white noise, real-ish edge
+    assert res.metrics["lo_deflation_factor"] > 0.85 and res.passed is True and res.demotes is False

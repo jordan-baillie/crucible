@@ -41,7 +41,9 @@ MACRO_DEMOTES_FROM = "2026-06-29"  # frozen phase-in: demotion reserved for acti
 LO_DEFLATION_FLOOR = 0.70    # frozen: Lo-adjusted/naive Sharpe below this = materially serial-corr-inflated
 LO_SHARPE_FLOOR = 0.5        # frozen: Lo-adjusted annualized Sharpe a serial-corr-inflated strat must clear
 LO_MIN_OBS = 252             # frozen: evaluability floor (1y daily) for autocorrelation/PSR
-SHARPE_INFERENCE_DEMOTES_FROM = "2026-06-29"  # frozen phase-in (demotion needs calibration too)
+SHARPE_INFERENCE_DEMOTES_FROM = "2026-06-15"  # ACTIVE: calibration done (84 books, 0 would-demote, clean
+                                              # gap, carry book spared) -> activation amended 06-29->06-15
+                                              # (stricter direction; pre-reg §6). Gate now demotes live.
 
 
 @dataclass

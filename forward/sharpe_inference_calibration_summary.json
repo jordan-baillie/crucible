@@ -1,0 +1,98 @@
+{
+  "n_modules": 103,
+  "evaluated": 84,
+  "not_evaluated": 0,
+  "errors": 19,
+  "lo_deflation_factor_dist": {
+    "n": 84,
+    "min": 0.375,
+    "p5": 0.856,
+    "p10": 0.92,
+    "p25": 0.964,
+    "median": 1.053,
+    "p75": 1.11,
+    "p90": 1.18,
+    "p95": 1.227,
+    "max": 2.41
+  },
+  "lo_adjusted_sharpe_dist": {
+    "n": 84,
+    "min": -2.089,
+    "p5": -0.918,
+    "p10": -0.55,
+    "p25": -0.069,
+    "median": 0.432,
+    "p75": 0.846,
+    "p90": 1.575,
+    "p95": 1.868,
+    "max": 3.642
+  },
+  "naive_sharpe_dist": {
+    "n": 84,
+    "min": -1.984,
+    "p5": -0.903,
+    "p10": -0.519,
+    "p25": -0.065,
+    "median": 0.398,
+    "p75": 0.805,
+    "p90": 1.325,
+    "p95": 1.615,
+    "max": 9.706
+  },
+  "psr_vs_zero_dist": {
+    "n": 82,
+    "min": 0.0,
+    "p5": 0.001,
+    "p10": 0.015,
+    "p25": 0.352,
+    "median": 0.937,
+    "p75": 0.999,
+    "p90": 1.0,
+    "p95": 1.0,
+    "max": 1.0
+  },
+  "would_demote_count": 0,
+  "would_demote_ids": [],
+  "thresholds": {
+    "LO_DEFLATION_FLOOR": 0.7,
+    "LO_SHARPE_FLOOR": 0.5
+  },
+  "most_autocorrelated_books_deflation_lt_0.85": [
+    {
+      "id": "crypto_funding_carry_hysteresis_v1",
+      "family": "carry",
+      "is_crypto": true,
+      "deflation": 0.3752,
+      "lo_adj_sharpe": 3.642,
+      "naive_sharpe": 9.7058,
+      "would_demote": false
+    },
+    {
+      "id": "bab_smid_beta_neutral",
+      "family": "low_beta_defensive",
+      "is_crypto": false,
+      "deflation": 0.8277,
+      "lo_adj_sharpe": -0.1457,
+      "naive_sharpe": -0.1761,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_illiq_tranched_v3",
+      "family": "illiquidity_premium",
+      "is_crypto": false,
+      "deflation": 0.8342,
+      "lo_adj_sharpe": 1.6079,
+      "naive_sharpe": 1.9274,
+      "would_demote": false
+    },
+    {
+      "id": "basis_momentum_bp2019",
+      "family": "futures_term_structure",
+      "is_crypto": false,
+      "deflation": 0.8383,
+      "lo_adj_sharpe": -0.2751,
+      "naive_sharpe": -0.3282,
+      "would_demote": false
+    }
+  ]
+}
