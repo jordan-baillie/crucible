@@ -54,11 +54,65 @@ def yf_panel(tickers, start="2005-01-01") -> pd.DataFrame:
     return panel
 
 
-def fred_series(series_ids, start="2005-01-01") -> pd.DataFrame:
+# --- FRED series provenance (pre-reg: macro-neutralization gate §4) ----------------------------
+# MARKET-OBSERVED = a price/yield/spread/fx/implied-vol the market PRINTS; never revised, so using
+# its as-reported value historically is exact (no look-ahead). REVISED RELEASES = estimated by an
+# agency and restated later (GDP/CPI/payrolls); feeding their LATEST value into a backtest signal is
+# look-ahead bias -> use point-in-time vintages (FRED ALFRED). Strict mode bans the latter.
+MARKET_OBSERVED_FRED = {
+    # Treasury constant-maturity yields + curve spreads + TIPS real yields/breakevens
+    "DGS1MO", "DGS3MO", "DGS6MO", "DGS1", "DGS2", "DGS3", "DGS5", "DGS7", "DGS10", "DGS20", "DGS30",
+    "T10Y2Y", "T10Y3M", "T5YIE", "T10YIE", "T5YIFR", "DFII5", "DFII10", "DFII30",
+    # Corporate bond yields/spreads (Moody's daily; ICE/FRED spreads are market-derived)
+    "DBAA", "DAAA", "BAA", "AAA", "BAA10Y", "AAA10Y",
+    # Money-market / policy rates (observed)
+    "DFF", "EFFR", "OBFR", "SOFR", "DPRIME", "DCPF3M", "DCPN3M",
+    # Trade-weighted dollar + bilateral FX (market prices)
+    "DTWEXBGS", "DTWEXAFEGS", "DTWEXEMEGS",
+    "DEXUSEU", "DEXJPUS", "DEXUSUK", "DEXCAUS", "DEXCHUS", "DEXMXUS", "DEXKOUS",
+    # Commodity spot
+    "DCOILWTICO", "DCOILBRENTEU", "DHHNGSP",
+    # CBOE implied-vol indices
+    "VIXCLS", "VXVCLS", "VXDCLS", "OVXCLS", "GVZCLS",
+}
+REVISED_FRED_RELEASES = {
+    "GDP", "GDPC1", "GDPPOT", "A191RL1Q225SBEA", "PCEC96", "PCE", "PI", "DSPIC96",
+    "CPIAUCSL", "CPILFESL", "CPIAUCNS", "PCEPI", "PCEPILFE",
+    "UNRATE", "U6RATE", "PAYEMS", "CIVPART", "ICSA",
+    "INDPRO", "TCU", "RSAFS", "RSXFS", "HOUST", "PERMIT", "UMCSENT", "M1SL", "M2SL",
+}
+
+
+def _check_fred_ids(ids, allow_revised: bool):
+    """Provenance guard for fred_series. Default path WARNS (stderr) on known revised releases.
+    Strict mode (allow_revised=False, used by the macro-neutralization factor loader) RAISES unless
+    every id is market-observed -> the look-ahead path is structurally absent, not merely discouraged."""
+    revised = [s for s in ids if s in REVISED_FRED_RELEASES]
+    if revised and allow_revised:
+        print(f"[fred_series] LOOK-AHEAD WARNING: {revised} are REVISED macro releases; latest-revised "
+              f"values are look-ahead bias if fed into a signal. OK for diagnostics; for signals use "
+              f"ALFRED vintages (prereg-macro-neutralization-gate.md §4).", file=sys.stderr)
+    if not allow_revised:
+        bad = [s for s in ids if s not in MARKET_OBSERVED_FRED]
+        if bad:
+            raise ValueError(
+                f"fred_series(allow_revised=False): {bad} not in the market-observed allowlist "
+                f"(revised releases or unknown). Add genuinely market-observed ids to "
+                f"MARKET_OBSERVED_FRED, or use ALFRED vintages for revised releases "
+                f"(pre-reg: macro-neutralization gate §4).")
+
+
+def fred_series(series_ids, start="2005-01-01", allow_revised: bool = True) -> pd.DataFrame:
     """Daily-ffilled FRED series panel. series_ids: dict {fred_id: column_name} or list.
-    Day-cached on disk (E4)."""
+    Day-cached on disk (E4).
+
+    allow_revised (default True = legacy behaviour): when False (strict; used by the macro-
+    neutralization factor loader) only MARKET_OBSERVED_FRED ids are permitted — revised/released
+    macro series raise (look-ahead risk; use ALFRED vintages). See macro-neutralization gate §4."""
     import urllib.request
     from crucible_paths import SECRETS
+    _ids = list(series_ids) if isinstance(series_ids, (list, tuple)) else list(series_ids.keys())
+    _check_fred_ids(_ids, allow_revised)
     cache = _day_cache("fred", [*(series_ids if isinstance(series_ids, (list, tuple))
                                   else sorted(series_ids.items())), start])
     if cache and os.path.exists(cache):
@@ -83,6 +137,47 @@ def fred_series(series_ids, start="2005-01-01") -> pd.DataFrame:
         except OSError:
             pass
     return df
+
+
+# --- Macro-neutralization factor block (pre-reg: macro-neutralization gate, FROZEN 2026-06-15) ---
+_MACRO_FRED = {  # FRED id -> temp column; ALL market-observed (never revised)
+    "DGS10": "_dgs10", "T10Y2Y": "_slope", "T10YIE": "_be",
+    "DBAA": "_baa", "DAAA": "_aaa", "DTWEXBGS": "_usd", "DCOILWTICO": "_oil", "VIXCLS": "_vix",
+}
+
+
+def macro_factor_returns(start="2003-01-01", include_crypto=False, crypto_market="spot") -> pd.DataFrame:
+    """Daily MACRO FACTOR RETURNS for the neutralization gate (8 factors; +BTC/ETH if include_crypto).
+    Every input is market-observed & never revised -> look-ahead-free by construction (pre-reg §4).
+    Columns: dur, slope, breakeven, credit, usd, oil, gold, vol [, btc, eth]. NaN where a series does
+    not yet cover a date (the harness applies the coverage/obs evaluability guard). Underlying pulls
+    are day-cached, so repeated calls in a run hit disk once."""
+    lv = fred_series(_MACRO_FRED, start=start, allow_revised=False)  # strict: allowlisted only
+    f = pd.DataFrame(index=lv.index)
+    f["dur"]       = -7.5 * (lv["_dgs10"] / 100.0).diff()         # -Dur*dy (first-order duration return)
+    f["slope"]     = (lv["_slope"] / 100.0).diff()                # curve twist (10y-2y)
+    f["breakeven"] = (lv["_be"] / 100.0).diff()                   # inflation compensation
+    f["credit"]    = -((lv["_baa"] - lv["_aaa"]) / 100.0).diff()  # risk-on = Baa-Aaa spread tightening
+    f["usd"]       = np.log(lv["_usd"]).diff()                    # broad dollar
+    f["oil"]       = np.log(lv["_oil"].where(lv["_oil"] > 0)).diff()  # WTI (guard the 2020 negative print)
+    f["vol"]       = (lv["_vix"] / 100.0).diff()                  # equity implied vol (risk-off)
+    # gold via GLD ETF (FRED free gold-fix discontinued); ETF closes are market-observed/non-revised
+    try:
+        gld = yf_panel(["GLD"], start=start)["GLD"]
+        f["gold"] = np.log(gld).diff().reindex(f.index)
+    except Exception:
+        f["gold"] = np.nan
+    if include_crypto:
+        try:
+            kl = binance_klines(["BTCUSDT", "ETHUSDT"], market=crypto_market,
+                                start=max(str(start), "2017-01-01"))
+            for sym, col in (("BTCUSDT", "btc"), ("ETHUSDT", "eth")):
+                f[col] = (np.log(kl[(sym, "close")].astype(float)).diff().reindex(f.index)
+                          if (sym, "close") in kl.columns else np.nan)
+        except Exception:
+            f["btc"] = np.nan
+            f["eth"] = np.nan
+    return f
 
 
 def trend_returns(**params):

@@ -23,6 +23,17 @@ SCREEN_FLOOR = 0.3   # tier-0: |search Sharpe| below this -> no in-sample edge -
 BETA_HI = 0.6        # long-only beta-to-universe above this + weak selection-alpha -> beta-confound
 SEL_FLOOR = 0.4      # selection-alpha Sharpe a high-beta strategy must clear to be a real edge (not just beta)
 
+# --- MACRO-NEUTRALIZATION gate (pre-reg: prereg-macro-neutralization-gate.md, FROZEN 2026-06-15) ---
+#     beta-confound generalized from 1 factor (universe) to the 8-factor macro block. SHIPPED
+#     ANNOTATE-ONLY: _macro_decomp records macro_r2/residual-Sharpe on every verdict; NO demotion.
+#     The thresholds below are the FROZEN demotion rule, RESERVED for the later activation change
+#     (turns on only after the §5 calibration is recorded AND MACRO_DEMOTES_FROM passes).
+MACRO_R2_HI = 0.50            # frozen: macro block explains > this share of variance (demotion, not yet active)
+MACRO_SEL_FLOOR = SEL_FLOOR   # frozen: macro-neutral residual Sharpe a confounded strat must clear (=0.4)
+MACRO_MIN_OBS = 500          # frozen: overlapping obs for a stable 8-factor hedge (~2yr); else not_evaluated
+MACRO_COVERAGE_FLOOR = 0.80   # frozen: each factor must cover >= this share of the search window
+MACRO_DEMOTES_FROM = "2026-06-29"  # frozen phase-in: demotion reserved for activation change (needs calibration too)
+
 
 @dataclass
 class StrategySpec:
@@ -187,6 +198,64 @@ def _beta_decomp(search_ret, price_mx):
                 "selection_alpha_sharpe": _sharpe(df["r"] - beta * df["m"])}
     except Exception:
         return None
+
+
+def _macro_decomp(search_ret, macro_mx):
+    """Neutralize SEARCH returns against the macro factor block (pre-reg: macro-neutralization gate).
+    Generalizes _beta_decomp from 1 factor (universe) to the 8-factor macro block. The factors are
+    tradeable, so the fitted part is a real HEDGE and `macro-neutral = returns - factor_part` is the
+    edge that survives hedging macro. Gates on the RESIDUAL (uniquely determined even under collinear
+    regressors), so individual `macro_betas` are DIAGNOSTIC ONLY. ANNOTATE-ONLY: this computes and
+    returns the metrics; the harness records them and does NOT demote (demotion is a later change).
+    Returns {'evaluated': False, 'note': ...} on any not-evaluable path (never a silent pass/fail)."""
+    if macro_mx is None or len(macro_mx) == 0:
+        return {"evaluated": False, "note": "macro factor block unavailable"}
+    try:
+        y = pd.Series(search_ret).dropna()
+        if len(y) == 0:
+            return {"evaluated": False, "note": "empty search returns"}
+        win = macro_mx.loc[(macro_mx.index >= y.index.min()) & (macro_mx.index <= y.index.max())]
+        if len(win) == 0:
+            return {"evaluated": False, "note": "no macro factor coverage in search window"}
+        cov = win.notna().mean()  # per-factor non-NaN fraction over the window
+        thin = [c for c in win.columns if float(cov.get(c, 0.0)) < MACRO_COVERAGE_FLOOR]
+        if thin:
+            return {"evaluated": False,
+                    "note": f"macro factor(s) below {MACRO_COVERAGE_FLOOR:.0%} coverage: {thin}"}
+        df = pd.concat([y.rename("y"), macro_mx], axis=1).dropna()
+        n = len(df)
+        if n < MACRO_MIN_OBS:
+            return {"evaluated": False, "note": f"only {n} overlapping obs (need >= {MACRO_MIN_OBS})"}
+        cols = list(macro_mx.columns)
+        X = df[cols].values
+        yv = df["y"].values.astype(float)
+        Xi = np.column_stack([np.ones(n), X])              # intercept + k factor columns
+        beta, *_ = np.linalg.lstsq(Xi, yv, rcond=None)
+        neutral = yv - X @ beta[1:]                         # macro-neutral stream = alpha + residual
+        resid = yv - Xi @ beta
+        ss_res = float(np.sum(resid ** 2))
+        ss_tot = float(np.sum((yv - yv.mean()) ** 2))
+        r2 = (1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0
+        k = len(cols)
+        pval, dfres = None, n - k - 1
+        if dfres > 0 and 0.0 <= r2 < 1.0:
+            fstat = (r2 / k) / ((1.0 - r2) / dfres)         # joint F-test of the k factor slopes
+            try:
+                from scipy import stats as _st
+                pval = float(_st.f.sf(fstat, k, dfres))
+            except Exception:
+                pval = None
+        return {
+            "evaluated": True, "n_obs": n, "n_factors": k,
+            "gross_sharpe": round(_sharpe(pd.Series(yv)), 3),
+            "macro_r2": round(float(r2), 3),
+            "macro_residual_sharpe": round(_sharpe(pd.Series(neutral)), 3),
+            "macro_block_pvalue": (round(pval, 4) if pval is not None else None),
+            "macro_betas": {c: round(float(b), 5) for c, b in zip(cols, beta[1:])},  # diagnostic only
+            "note": None,
+        }
+    except Exception as e:
+        return {"evaluated": False, "note": f"macro decomp error: {e}"}
 
 
 def _permute_panel_prices(panel, rng):
@@ -644,6 +713,19 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     beta_confound = bool(decomp.get("beta_to_universe", 0) > BETA_HI
                          and decomp.get("selection_alpha_sharpe") is not None
                          and decomp["selection_alpha_sharpe"] < SEL_FLOOR)
+    # MACRO-NEUTRALIZATION annotation (pre-reg FROZEN 2026-06-15; ANNOTATE-ONLY -> records metrics,
+    # demotes nothing). Generalizes beta-confound to the macro block so the macro_r2 / residual-Sharpe
+    # distribution can be observed before demotion is calibrated + enabled. Network-guarded: any
+    # failure -> not_evaluated, never a crash and never a verdict change.
+    try:
+        from sdk.adapters import macro_factor_returns
+        from sdk import cost_model as _cm_macro
+        _macro_start = (str(pd.Timestamp(search.index.min()).date()) if len(search) else "2003-01-01")
+        _macro_mx = macro_factor_returns(start=_macro_start,
+                                         include_crypto=_cm_macro.is_crypto(getattr(spec, "markets", None)))
+        macro_neutral = _macro_decomp(search, _macro_mx)
+    except Exception as e:
+        macro_neutral = {"evaluated": False, "note": f"macro block error: {e}"}
     # Stage 2a Part A (pre-registered, frozen): the edge must be non-negative in BOTH vol halves.
     regime_split = _regime_split(search, _price_matrix(panel))
     # Stage 2a Part B: were the ledger regime gates even evaluable?
@@ -739,6 +821,9 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "n_trades": len(trades),
         "beta_to_universe": decomp.get("beta_to_universe"),
         "selection_alpha_sharpe": decomp.get("selection_alpha_sharpe"), "beta_confound": beta_confound,
+        "macro_neutral": macro_neutral,  # ANNOTATE-ONLY: full sub-dict (evaluated flag + metrics/note)
+        "macro_r2": macro_neutral.get("macro_r2"),
+        "macro_residual_sharpe": macro_neutral.get("macro_residual_sharpe"),
         "regime_split": regime_split, "regime_coverage": regime_cov,
         "deployability": deploy_filter,
         "stage1_pass": stage1_pass, "confirmed": gen_confirmed, "scope": getattr(spec, "scope", "broad"),
