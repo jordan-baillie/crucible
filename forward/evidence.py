@@ -147,18 +147,30 @@ def _g6(book: str, returns: list, fills: list) -> dict:
     import statistics
     cut = _cutoff()
     build_day = min((str(f["date"]) for f in fills if f.get("date")), default=None)
-    sl = [float(f["slippage_bps"]) for f in fills
-          if f.get("slippage_bps") is not None and str(f.get("date", "")) >= cut
-          and str(f.get("date")) != build_day]
+
+    def _slip(f):
+        # Leg B Phase 2 (amend prereg-g6g7-consolidation 2026-06-15): prefer the CLEAN
+        # official-open slippage; the decision_px measure is contaminated by stale IEX prices.
+        v = f.get("slippage_open_bps")
+        if v is not None:
+            return float(v), "open"
+        v = f.get("slippage_bps")
+        return (float(v), "decision_px") if v is not None else (None, None)
+
+    picked = [(_slip(f)) for f in fills
+              if str(f.get("date", "")) >= cut and str(f.get("date")) != build_day]
+    sl = [v for v, _ in picked if v is not None]
+    refs = {r for _, r in picked if r}
+    ref = "open" if refs == {"open"} else ("mixed" if "open" in refs else "decision_px(stale)")
     modeled = MODELED_COST_BPS.get(book)
     if not sl or modeled is None:
         return {"value": None, "need": f"median <= {SLIPPAGE_MULT}x modeled", "pass": None,
-                "lookback_days": LOOKBACK_DAYS, "build_day_excluded": build_day,
+                "lookback_days": LOOKBACK_DAYS, "build_day_excluded": build_day, "slip_ref": ref,
                 "note": f"{len(sl)} steady-state fills in window — accumulating"}
     med = statistics.median(sl)
     bar = SLIPPAGE_MULT * modeled
     return {"value": round(med, 1), "need": f"<= {bar:.0f}bps (2x {modeled:.0f}bps modeled)",
-            "pass": med <= bar, "n_fills": len(sl),
+            "pass": med <= bar, "n_fills": len(sl), "slip_ref": ref,
             "lookback_days": LOOKBACK_DAYS, "build_day_excluded": build_day}
 
 
