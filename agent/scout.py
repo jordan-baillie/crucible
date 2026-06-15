@@ -30,13 +30,37 @@ def _brave(query, n=5):
         return f"(search failed: {e})"
 
 
-def _papers(query):
-    """Firecrawl research-category layer (academic papers). Additive + graceful: never breaks the scout."""
+def _research(query):
+    """(text, items) from the Firecrawl research-paper layer. Graceful: never breaks the scout."""
     try:
-        from agent.firecrawl import rich_research_text
-        return rich_research_text(query)
+        from agent.firecrawl import research_search, format_research
+        items, _ = research_search(query)
+        return format_research(items), items
     except Exception as e:
-        return f"(research search failed: {e})"
+        return f"(research search failed: {e})", []
+
+
+def _deep_dive(papers_all, n=2):
+    """Deep-extract full methodology/data of up to n OPEN-ACCESS (arXiv) papers via /scrape JSON-mode."""
+    try:
+        from agent.firecrawl import deep_extract, is_extractable, format_deep
+    except Exception:
+        return ""
+    out, seen = [], set()
+    for p in papers_all:
+        if len(out) >= n:
+            break
+        u = (p or {}).get("url", "")
+        if u and u not in seen and is_extractable(u):
+            seen.add(u)
+            try:
+                data = deep_extract(u)
+                if data:
+                    out.append(format_deep(p, data))
+            except Exception:
+                pass
+    return ("\n\n### DEEP DIVES (full methodology/data of top open-access papers)\n" +
+            "\n\n".join(out)) if out else ""
 
 
 def _json(text):
@@ -65,10 +89,13 @@ def scout(n_queries=4):
     queries = _json(q_raw) or ["systematic risk premia retail backtest 2025 carry trend vol",
                                "crypto delta neutral funding basis strategy 2025"]
     queries = queries[:n_queries]
-    # 2. search — broad web+news (Brave) AND academic papers (Firecrawl research category)
-    results = "\n\n".join(
-        f"### QUERY: {q}\n{_brave(q)}\n\n[ACADEMIC PAPERS — research frontier]\n{_papers(q)}"
-        for q in queries)
+    # 2. search — Brave (broad web+news) + Firecrawl research papers; deep-dive top open-access papers
+    blocks, papers_all = [], []
+    for q in queries:
+        ptxt, pitems = _research(q)
+        papers_all += pitems
+        blocks.append(f"### QUERY: {q}\n{_brave(q)}\n\n[ACADEMIC PAPERS — research frontier]\n{ptxt}")
+    results = "\n\n".join(blocks) + _deep_dive(papers_all)
     # 3. distill into structured findings + testable candidates (with sources), flag contradictions
     d_raw = _pi(f"{ctx}\n\n=== WEB SEARCH RESULTS ===\n{results}\n\n"
                 f"Distill these into NEW knowledge for the wiki. Return ONLY JSON:\n"
