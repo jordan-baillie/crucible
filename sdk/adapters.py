@@ -782,3 +782,280 @@ def treasury_auctions(types=("Note", "Bond"), start="2010-01-01") -> pd.DataFram
         except OSError:
             pass
     return df
+
+
+# ============================================================================================
+# DATA-COVERAGE EXPANSION (audit 2026-06-15) — all FREE/$0 sources. Uniform pattern: one function ->
+# cached DataFrame/Series/list, sensible defaults, docstring shows the exact load line + caveats.
+# Discover with list_adapters(); the authoritative prose index is research-wiki/DATA_CATALOG.md.
+# ============================================================================================
+
+# --- #55 Broad crypto universe (Binance, FREE) -- fixes the breadth-gate small cross-section --------
+_LEV = ("UPUSDT", "DOWNUSDT", "BULLUSDT", "BEARUSDT")
+_STABLE_USDT = {"USDCUSDT", "BUSDUSDT", "TUSDUSDT", "FDUSDUSDT", "DAIUSDT", "USDPUSDT", "EURUSDT", "AEURUSDT"}
+
+
+def binance_universe(top_n: int = 75, market: str = "perp", min_quote_vol: float = 5e6) -> list:
+    """Top-N most-liquid USDT pairs by 24h quote-volume — the BROAD crypto cross-section beyond the 12
+    CRYPTO_MAJORS. Excludes leveraged tokens + stablecoin pairs. Day-cached. Pair with binance_klines:
+        syms  = binance_universe(75)
+        panel = binance_klines(syms, market='perp', start='2021-01-01')
+    market='perp'|'spot'. Snapshot daily -> delisted pairs drop out (avoid survivorship; re-snapshot)."""
+    url = ("https://fapi.binance.com/fapi/v1/ticker/24hr" if market == "perp"
+           else "https://api.binance.com/api/v3/ticker/24hr")
+    cache = _day_cache("binuniv", [market, top_n, int(min_quote_vol)])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)["symbol"].tolist()
+    try:
+        data = json.loads(_http_get(url, timeout=40))
+    except Exception:
+        return list(CRYPTO_MAJORS)
+    rows = []
+    for d in (data if isinstance(data, list) else []):
+        s = d.get("symbol", "")
+        if s.endswith("USDT") and "_" not in s and s not in _STABLE_USDT and not any(b in s for b in _LEV):
+            try:
+                qv = float(d.get("quoteVolume", 0))
+            except (TypeError, ValueError):
+                qv = 0.0
+            if qv >= min_quote_vol:
+                rows.append((s, qv))
+    rows.sort(key=lambda x: -x[1])
+    syms = [s for s, _ in rows[:top_n]] or list(CRYPTO_MAJORS)
+    if cache and syms:
+        try:
+            tmp = cache + ".tmp"; pd.DataFrame({"symbol": syms}).to_parquet(tmp); os.replace(tmp, cache)
+        except OSError:
+            pass
+    return syms
+
+
+# --- #57 FRED ALFRED vintage (point-in-time macro, FREE; same FRED key) -----------------------------
+def fred_vintage(series_ids, vintage_date: str, start: str = "2000-01-01") -> pd.DataFrame:
+    """POINT-IN-TIME macro via ALFRED (Archival FRED): each series AS KNOWN on `vintage_date`
+    (realtime_start=realtime_end=vintage_date) -> NO revision look-ahead. The vintage path the macro-
+    neutralization gate requires before REVISED releases (GDP/CPI/payrolls) may enter a SIGNAL.
+        gdp_asof = fred_vintage({'GDPC1': 'rgdp'}, vintage_date='2020-06-30')
+    Free FRED key. For a backtest, query the vintage at EACH as-of date (cache it). Day+vintage-cached."""
+    from crucible_paths import SECRETS
+    if isinstance(series_ids, (list, tuple)):
+        series_ids = {s: s for s in series_ids}
+    cache = _day_cache("alfred", [*sorted(series_ids.items()), vintage_date, start])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)
+    key = os.environ.get("FRED_API_KEY") or json.load(open(SECRETS))["fred_api_key"]
+    out = {}
+    for sid, col in series_ids.items():
+        u = (f"https://api.stlouisfed.org/fred/series/observations?series_id={sid}"
+             f"&api_key={key}&file_type=json&observation_start={start}"
+             f"&realtime_start={vintage_date}&realtime_end={vintage_date}")
+        d = json.loads(_http_get(u, timeout=40))
+        out[col] = pd.Series({pd.Timestamp(o["date"]): float(o["value"])
+                              for o in d.get("observations", []) if o["value"] != "."}).sort_index()
+    df = pd.DataFrame(out).sort_index()
+    if cache and not df.empty:
+        try:
+            tmp = cache + ".tmp"; df.to_parquet(tmp); os.replace(tmp, cache)
+        except OSError:
+            pass
+    return df
+
+
+# --- #58 Deribit DVOL implied-vol index (crypto VRP, FREE public API, no auth) -----------------------
+def deribit_dvol(currency: str = "BTC", start: str = "2021-01-01") -> pd.DataFrame:
+    """Deribit DVOL implied-volatility index (BTC/ETH 30-day IV), daily OHLC — FREE, no auth.
+    Crypto variance-risk-premium: DVOL (implied) minus realized vol = the harvestable VRP.
+        dvol = deribit_dvol('BTC')   # columns open/high/low/close (annualised vol points)
+    Index history ~2021+. Day-cached."""
+    import time as _t
+    cache = _day_cache("dvol", [currency, start])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)
+    # Deribit caps points/request -> fetch in ~180-day windows (a single multi-year pull stalls).
+    cur, end_ms, day = int(pd.Timestamp(start).timestamp() * 1000), int(_t.time() * 1000), 86_400_000
+    rows = []
+    while cur < end_ms:
+        nxt = min(cur + 180 * day, end_ms)
+        u = (f"https://www.deribit.com/api/v2/public/get_volatility_index_data?currency={currency}"
+             f"&start_timestamp={cur}&end_timestamp={nxt}&resolution=1D")
+        try:
+            rows += (json.loads(_http_get(u, timeout=25)).get("result") or {}).get("data") or []
+        except Exception:
+            pass
+        cur = nxt + day
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows, columns=["t", "open", "high", "low", "close"]).drop_duplicates("t")
+    df["date"] = pd.to_datetime(df["t"], unit="ms")
+    df = df.drop(columns="t").set_index("date").astype(float).sort_index()
+    if cache:
+        try:
+            tmp = cache + ".tmp"; df.to_parquet(tmp); os.replace(tmp, cache)
+        except OSError:
+            pass
+    return df
+
+
+# --- #59 Kenneth French factor returns (FREE; style gate #42 + benchmarks) ---------------------------
+_FRENCH = {"ff5_daily": ("F-F_Research_Data_5_Factors_2x3_daily_CSV.zip",
+                         ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"]),
+           "ff3_daily": ("F-F_Research_Data_Factors_daily_CSV.zip", ["Mkt-RF", "SMB", "HML", "RF"]),
+           "mom_daily": ("F-F_Momentum_Factor_daily_CSV.zip", ["Mom"])}
+
+
+def french_factors(dataset: str = "ff5_daily") -> pd.DataFrame:
+    """Kenneth French factor returns (FREE), as DECIMAL daily returns. datasets: 'ff5_daily'
+    (Mkt-RF,SMB,HML,RMW,CMA,RF), 'ff3_daily', 'mom_daily' (Mom/UMD). US, deep history (1926+ for FF3).
+        ff = french_factors('ff5_daily'); umd = french_factors('mom_daily')
+    For the style-neutralization gate (#42) + clean style benchmarks. Day-cached."""
+    import io
+    import zipfile
+    if dataset not in _FRENCH:
+        return pd.DataFrame()
+    cache = _day_cache("french", [dataset])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)
+    fn, cols = _FRENCH[dataset]
+    raw = _http_get("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/" + fn, timeout=60)
+    txt = zipfile.ZipFile(io.BytesIO(raw)).read(zipfile.ZipFile(io.BytesIO(raw)).namelist()[0]).decode("latin-1")
+    rows = []
+    for ln in txt.splitlines():
+        p = [x.strip() for x in ln.strip().split(",")]
+        if p and len(p[0]) == 8 and p[0].isdigit():   # YYYYMMDD daily data row (skips monthly/annual block)
+            try:
+                rows.append([pd.Timestamp(p[0])] + [float(x) / 100.0 for x in p[1:]])
+            except ValueError:
+                continue
+    if not rows:
+        return pd.DataFrame()
+    ncol = len(rows[0]) - 1
+    df = pd.DataFrame([r[1:] for r in rows], index=[r[0] for r in rows], columns=cols[:ncol]).sort_index()
+    df = df[~df.index.duplicated(keep="first")]
+    if cache:
+        try:
+            tmp = cache + ".tmp"; df.to_parquet(tmp); os.replace(tmp, cache)
+        except OSError:
+            pass
+    return df
+
+
+# --- #56 SEC EDGAR (FREE 13F + insider). Form 4 insider maps to the company's OWN ticker (no CUSIP);
+#         13F holdings come by CUSIP (CUSIP->ticker mapping is a noted follow-on). SEC requires a UA. --
+_SEC_UA = {"User-Agent": "crucible-research personal-use research@crucible.local"}
+
+
+def _sec_get(url, timeout=30):
+    import urllib.request
+    return urllib.request.urlopen(urllib.request.Request(url, headers=_SEC_UA), timeout=timeout).read()
+
+
+def sec_cik(ticker: str):
+    """SEC CIK (10-digit, zero-padded) for a ticker via the free company_tickers map. Day-cached."""
+    cache = _day_cache("seccik", ["map"])
+    m = pd.read_parquet(cache) if (cache and os.path.exists(cache)) else None
+    if m is None:
+        d = json.loads(_sec_get("https://www.sec.gov/files/company_tickers.json"))
+        m = pd.DataFrame([{"ticker": v["ticker"].upper(), "cik": f'{int(v["cik_str"]):010d}'}
+                          for v in d.values()])
+        if cache:
+            try:
+                m.to_parquet(cache + ".tmp"); os.replace(cache + ".tmp", cache)
+            except OSError:
+                pass
+    hit = m[m["ticker"] == str(ticker).upper()]
+    return hit["cik"].iloc[0] if len(hit) else None
+
+
+def sec_filings(ticker_or_cik: str, form=None, limit: int = 40) -> pd.DataFrame:
+    """Recent SEC filings (metadata) for a company. form e.g. '4' (insider), '13F-HR', '8-K', '10-Q'.
+    USE the filing_date (point-in-time). f = sec_filings('AAPL', form='4')."""
+    cik = (ticker_or_cik if str(ticker_or_cik).isdigit() and len(str(ticker_or_cik)) == 10
+           else sec_cik(ticker_or_cik))
+    if not cik:
+        return pd.DataFrame()
+    r = (json.loads(_sec_get(f"https://data.sec.gov/submissions/CIK{cik}.json")).get("filings") or {}).get("recent") or {}
+    df = pd.DataFrame({"form": r.get("form", []), "filing_date": r.get("filingDate", []),
+                       "accession": r.get("accessionNumber", []), "primary_doc": r.get("primaryDocument", [])})
+    df["cik"] = cik
+    if form:
+        df = df[df["form"] == form]
+    return df.head(limit).reset_index(drop=True)
+
+
+def sec_insider(ticker: str, limit: int = 30) -> pd.DataFrame:
+    """Net INSIDER activity (Form 4) for a ticker — directly usable (Form 4 is filed BY the company ->
+    maps to its own ticker, NO CUSIP mapping). Per-transaction {date, code A=buy/D=sell, shares, price,
+    value, net_usd}; aggregate net_usd for an insider-buying signal. Caps at `limit` recent Form 4s
+    (one fetch each). insider = sec_insider('AAPL'). Use filing/transaction date for PIT."""
+    import xml.etree.ElementTree as ET
+    fl = sec_filings(ticker, form="4", limit=limit)
+    if fl.empty:
+        return pd.DataFrame()
+    cik = int(fl["cik"].iloc[0])
+    rows = []
+    for _, f in fl.iterrows():
+        # primary_doc is the XSL-STYLED path (e.g. 'xslF345X06/form4.xml'); the raw ownership XML is the
+        # SAME filename at the filing root -> use the basename.
+        doc = str(f["primary_doc"]).split("/")[-1]
+        if not doc.endswith(".xml"):
+            continue
+        try:
+            root = ET.fromstring(_sec_get(
+                f"https://www.sec.gov/Archives/edgar/data/{cik}/{f['accession'].replace('-', '')}/{doc}"))
+        except Exception:
+            continue
+        for t in root.iter("nonDerivativeTransaction"):
+            def _v(path):
+                e = t.find(path + "/value")
+                return e.text if e is not None else None
+            code, sh, px, dt = (_v("transactionAmounts/transactionAcquiredDisposedCode"),
+                                _v("transactionAmounts/transactionShares"),
+                                _v("transactionAmounts/transactionPricePerShare"),
+                                _v("transactionDate"))
+            if code in ("A", "D") and sh and dt:
+                try:
+                    shares, price = float(sh), (float(px) if px else 0.0)
+                    rows.append({"date": pd.Timestamp(dt), "code": code, "shares": shares, "price": price,
+                                 "value": shares * price, "net_usd": (1 if code == "A" else -1) * shares * price})
+                except (ValueError, TypeError):
+                    continue
+    return pd.DataFrame(rows).sort_values("date").reset_index(drop=True) if rows else pd.DataFrame()
+
+
+# --- #60 EIA energy fundamentals (FREE but needs a free key -> KEY-PENDING, untested until registered)
+def eia_series(series_id: str, start: str = "2010-01-01") -> pd.Series:
+    """EIA energy fundamentals (inventories/production/prices) — commodity-futures CONDITIONING.
+    FREE but needs a free key: env EIA_API_KEY or secrets 'eia_api_key' (register: eia.gov/opendata).
+    e.g. eia_series('PET.WCESTUS1.W') = US crude stocks (weekly). USDA NASS follows the same key-pending
+    pattern (usda.gov Quick Stats key). KEY-PENDING until a key is added."""
+    from crucible_paths import SECRETS
+    key = os.environ.get("EIA_API_KEY")
+    if not key:
+        try:
+            key = json.load(open(SECRETS)).get("eia_api_key")
+        except Exception:
+            key = None
+    if not key:
+        raise RuntimeError("EIA key not configured (free: eia.gov/opendata -> add 'eia_api_key' to secrets). KEY-PENDING.")
+    d = json.loads(_http_get(f"https://api.eia.gov/v2/seriesid/{series_id}?api_key={key}", timeout=40))
+    data = (d.get("response") or {}).get("data") or []
+    s = pd.Series({pd.Timestamp(r["period"]): float(r["value"])
+                   for r in data if r.get("value") is not None}).sort_index()
+    return s[s.index >= pd.Timestamp(start)]
+
+
+# --- Agent discovery: programmatic index of every adapter (DATA_CATALOG.md is the prose version) -----
+def list_adapters() -> str:
+    """print(list_adapters()) -> every public sdk.adapters function + signature + one-line purpose.
+    Derived from the code (cannot drift). The agent's quick 'what data can I load?' index."""
+    import inspect
+    out = []
+    for name, fn in sorted(vars(sys.modules[__name__]).items()):
+        if inspect.isfunction(fn) and not name.startswith("_") and fn.__module__ == __name__:
+            doc = (fn.__doc__ or "").strip().split("\n")[0]
+            try:
+                sig = str(inspect.signature(fn))
+            except (ValueError, TypeError):
+                sig = "(...)"
+            out.append(f"  {name}{sig}\n      {doc[:110]}")
+    return "Data adapters (from sdk.adapters import ...):\n" + "\n".join(out)
