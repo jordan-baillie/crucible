@@ -1044,6 +1044,28 @@ def eia_series(series_id: str, start: str = "2010-01-01") -> pd.Series:
     return s[s.index >= pd.Timestamp(start)]
 
 
+def usda_nass(commodity_desc: str, statisticcat_desc: str = "STOCKS", **params) -> pd.DataFrame:
+    """USDA NASS Quick Stats (ag production/stocks/estimates) — commodity-futures CONDITIONING for
+    grains/softs (ZC/ZS/ZW). FREE but needs a free key: env USDA_NASS_KEY or secrets 'usda_nass_key'
+    (register: quickstats.nass.usda.gov/api). KEY-PENDING. Returns the matching rows as a DataFrame
+    (filter to the Value/year columns you need). e.g. usda_nass('CORN', statisticcat_desc='STOCKS')."""
+    import urllib.parse
+    from crucible_paths import SECRETS
+    key = os.environ.get("USDA_NASS_KEY")
+    if not key:
+        try:
+            key = json.load(open(SECRETS)).get("usda_nass_key")
+        except Exception:
+            key = None
+    if not key:
+        raise RuntimeError("USDA NASS key not configured (free: quickstats.nass.usda.gov/api -> add "
+                           "'usda_nass_key' to secrets). KEY-PENDING.")
+    q = {"key": key, "commodity_desc": commodity_desc, "statisticcat_desc": statisticcat_desc,
+         "format": "JSON", **params}
+    u = "https://quickstats.nass.usda.gov/api/api_GET/?" + urllib.parse.urlencode(q)
+    return pd.DataFrame(json.loads(_http_get(u, timeout=60)).get("data") or [])
+
+
 # --- Agent discovery: programmatic index of every adapter (DATA_CATALOG.md is the prose version) -----
 def list_adapters() -> str:
     """print(list_adapters()) -> every public sdk.adapters function + signature + one-line purpose.
