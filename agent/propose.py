@@ -22,12 +22,16 @@ def _focus() -> str:
     return (
         "\n\n=== SEARCH FOCUS: CRYPTO (operator-directed 2026-06-15 — overrides the retail-equity bias) ===\n"
         "Propose CRYPTO-deployable strategies ONLY this run:\n"
-        "- Venue: spot + PERPETUAL futures on Binance/Bybit; the LIQUID MAJORS (BTC/ETH/SOL/BNB/XRP and other deep perps).\n"
+        "- Venue: spot + PERPETUAL futures on Binance/Bybit. UNIVERSE: use binance_universe(75) for the BROAD\n"
+        "  liquid cross-section (top ~75 USDT perps by volume, liquidity-screened) on any CROSS-SECTIONAL factor;\n"
+        "  the 12 CRYPTO_MAJORS are only for SINGLE-ASSET timing (BTC/ETH vol, basis). A real cross-section is\n"
+        "  REQUIRED — the breadth/Fundamental-Law gate FLAGS a high IR on a tiny correlated cross-section as overfit.\n"
         "- Crypto deployability: perps short FREELY (NO stock-borrow constraint — a crypto long/short IS deployable),\n"
         "  ~20bps round-trip taker cost, <=2x leverage, no options. Set market='crypto', retail_tradable_5k='yes'.\n"
         "- Data reachable (adapters only — NEVER raw I/O): funding_rates() (perp funding, majors, 2019+);\n"
-        "  binance_klines(CRYPTO_MAJORS, market='perp'|'spot') = daily OHLCV + volume + trades + TAKER_BUY_QUOTE\n"
-        "  (deep-history flow/positioning proxy) for 12 liquid majors -> basis (perp vs spot), momentum/reversal,\n"
+        "  binance_klines(binance_universe(75), market='perp'|'spot') = daily OHLCV + volume + trades + TAKER_BUY_QUOTE\n"
+        "  (deep-history flow/positioning proxy) over the BROAD universe -> basis (perp vs spot), momentum/reversal,\n"
+        "  CRYPTO VOL/VRP: deribit_dvol('BTC'|'ETH') = DVOL implied-vol index (daily ~2021+) -> VRP = DVOL minus realized.\n"
         "  realized vol, liquidity tiers, taker-flow crowding; yf_panel for extra spot. ⚠ Binance OI + long/short\n"
         "  ratio are LAST-30-DAYS only (NOT backtestable -> DATA-GATED); use taker_buy_quote for deep-history flow.\n"
         "  ON-CHAIN FUNDAMENTALS: coinmetrics_metrics(CM_COMMUNITY_MAJORS, metrics=(...)) = free daily 2010+ —\n"
@@ -39,8 +43,9 @@ def _focus() -> str:
         "- DORMANT — do NOT just re-propose delta-neutral FUNDING CARRY: funding has compressed to ~0/negative in 2025-26\n"
         "  (see markets/crypto.md); it earns nothing today. Naive crypto MOMENTUM has FAILED before.\n"
         "- LOOK BEYOND CARRY for something that could pay in the CURRENT regime: cross-sectional crypto factors\n"
-        "  (momentum/reversal/low-vol across coins), basis- or taker-flow/crowding-CONDITIONAL timing, vol/term-structure,\n"
-        "  illiquidity in alts, regime gates. PREFER conditional/combination constructions over naive single signals.\n"
+        "  (momentum/reversal/low-vol/illiquidity ACROSS the broad binance_universe(75) — a real cross-section beats\n"
+        "  the 12-major one), basis- or taker-flow/crowding-CONDITIONAL timing, vol/term-structure (deribit_dvol),\n"
+        "  regime gates. PREFER conditional/combination constructions over naive single signals.\n"
     )
 
 
