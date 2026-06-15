@@ -95,3 +95,18 @@ def test_harness_deployability_filter_demotes(monkeypatch):
                                 search_trades=[{"ticker": "X", "position_value": 1000, "hold_days": 5}],
                                 candidate=False)
     assert ok["deployable"] is True
+
+
+def test_corwin_schultz_recovers_a_spread_and_floors_at_zero():
+    import numpy as np, pandas as pd
+    from forward.validate_cost_ladder import corwin_schultz_bps
+    n = 200
+    rng = np.random.default_rng(0)
+    P = 100 * np.exp(np.cumsum(rng.normal(0, 0.005, n)))   # mild random walk
+    s = 0.02                                               # 2% spread baked into H/L
+    df = pd.DataFrame({"High": P * (1 + s / 2), "Low": P * (1 - s / 2)})
+    est = corwin_schultz_bps(df)
+    assert np.isfinite(est) and est > 0                    # recovers a positive spread
+    # zero-range bars -> ~0 (negatives floored), never NaN-explode
+    flat = pd.DataFrame({"High": P, "Low": P})
+    assert corwin_schultz_bps(flat) == 0.0

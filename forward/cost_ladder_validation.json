@@ -1,0 +1,813 @@
+{
+ "summary": {
+  "method": "Corwin-Schultz (2012) effective spread vs frozen DV-decile ladder",
+  "lookback_days": 365,
+  "names_total": 120,
+  "names_usable": 118,
+  "deciles_scored": 10,
+  "central_ge_real_count": 0,
+  "within_20pct_count": 0,
+  "per_decile": {
+   "1": {
+    "n": 12,
+    "real_cs_bps": 137.2,
+    "ladder_central": 100,
+    "ladder_conservative": 160,
+    "central_over_real": 0.73,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "2": {
+    "n": 12,
+    "real_cs_bps": 149.9,
+    "ladder_central": 75,
+    "ladder_conservative": 120,
+    "central_over_real": 0.5,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "3": {
+    "n": 12,
+    "real_cs_bps": 70.6,
+    "ladder_central": 55,
+    "ladder_conservative": 88,
+    "central_over_real": 0.78,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "4": {
+    "n": 11,
+    "real_cs_bps": 83.4,
+    "ladder_central": 40,
+    "ladder_conservative": 64,
+    "central_over_real": 0.48,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "5": {
+    "n": 11,
+    "real_cs_bps": 58.9,
+    "ladder_central": 28,
+    "ladder_conservative": 45,
+    "central_over_real": 0.48,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "6": {
+    "n": 12,
+    "real_cs_bps": 40.4,
+    "ladder_central": 20,
+    "ladder_conservative": 32,
+    "central_over_real": 0.49,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "7": {
+    "n": 12,
+    "real_cs_bps": 72.9,
+    "ladder_central": 14,
+    "ladder_conservative": 22,
+    "central_over_real": 0.19,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "8": {
+    "n": 12,
+    "real_cs_bps": 28.8,
+    "ladder_central": 10,
+    "ladder_conservative": 16,
+    "central_over_real": 0.35,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "9": {
+    "n": 12,
+    "real_cs_bps": 28.9,
+    "ladder_central": 7,
+    "ladder_conservative": 11,
+    "central_over_real": 0.24,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   },
+   "10": {
+    "n": 12,
+    "real_cs_bps": 21.6,
+    "ladder_central": 5,
+    "ladder_conservative": 8,
+    "central_over_real": 0.23,
+    "central_conservative_(ladder>=real)": false,
+    "within_20pct": false
+   }
+  }
+ },
+ "rows": [
+  {
+   "decile": 1,
+   "ticker": "CPHC",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 14848.0
+  },
+  {
+   "decile": 1,
+   "ticker": "MSN",
+   "cs_spread_bps": 145.9,
+   "dv_usd": 15142.0
+  },
+  {
+   "decile": 1,
+   "ticker": "ZYBT",
+   "cs_spread_bps": 258.8,
+   "dv_usd": 15152.0
+  },
+  {
+   "decile": 1,
+   "ticker": "MYSZ",
+   "cs_spread_bps": 123.3,
+   "dv_usd": 15222.0
+  },
+  {
+   "decile": 1,
+   "ticker": "LFACU",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 15449.0
+  },
+  {
+   "decile": 1,
+   "ticker": "ZJYL",
+   "cs_spread_bps": 248.2,
+   "dv_usd": 15504.0
+  },
+  {
+   "decile": 1,
+   "ticker": "ZCMD",
+   "cs_spread_bps": 145.9,
+   "dv_usd": 15516.0
+  },
+  {
+   "decile": 1,
+   "ticker": "ZTG",
+   "cs_spread_bps": 174.9,
+   "dv_usd": 15624.0
+  },
+  {
+   "decile": 1,
+   "ticker": "HWH",
+   "cs_spread_bps": 157.6,
+   "dv_usd": 15660.0
+  },
+  {
+   "decile": 1,
+   "ticker": "INTJ",
+   "cs_spread_bps": 128.6,
+   "dv_usd": 15696.0
+  },
+  {
+   "decile": 1,
+   "ticker": "XCBE",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 15712.0
+  },
+  {
+   "decile": 1,
+   "ticker": "AACPU",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 15810.0
+  },
+  {
+   "decile": 2,
+   "ticker": "DTST",
+   "cs_spread_bps": 126.5,
+   "dv_usd": 76998.0
+  },
+  {
+   "decile": 2,
+   "ticker": "REXR-PB",
+   "cs_spread_bps": 0.3,
+   "dv_usd": 77180.0
+  },
+  {
+   "decile": 2,
+   "ticker": "IVF",
+   "cs_spread_bps": 123.7,
+   "dv_usd": 77250.0
+  },
+  {
+   "decile": 2,
+   "ticker": "KPRX",
+   "cs_spread_bps": 74.3,
+   "dv_usd": 77500.0
+  },
+  {
+   "decile": 2,
+   "ticker": "KNRX",
+   "cs_spread_bps": 225.0,
+   "dv_usd": 77700.0
+  },
+  {
+   "decile": 2,
+   "ticker": "NCRA",
+   "cs_spread_bps": 214.1,
+   "dv_usd": 77724.0
+  },
+  {
+   "decile": 2,
+   "ticker": "GRI",
+   "cs_spread_bps": 184.0,
+   "dv_usd": 77830.0
+  },
+  {
+   "decile": 2,
+   "ticker": "BCG",
+   "cs_spread_bps": 155.7,
+   "dv_usd": 77910.0
+  },
+  {
+   "decile": 2,
+   "ticker": "TWG",
+   "cs_spread_bps": 158.8,
+   "dv_usd": 78300.0
+  },
+  {
+   "decile": 2,
+   "ticker": "BKYI",
+   "cs_spread_bps": 190.5,
+   "dv_usd": 78309.0
+  },
+  {
+   "decile": 2,
+   "ticker": "AEMD",
+   "cs_spread_bps": 144.1,
+   "dv_usd": 78330.0
+  },
+  {
+   "decile": 2,
+   "ticker": "NTWK",
+   "cs_spread_bps": 143.4,
+   "dv_usd": 78542.0
+  },
+  {
+   "decile": 3,
+   "ticker": "FNGR",
+   "cs_spread_bps": 112.8,
+   "dv_usd": 213195.0
+  },
+  {
+   "decile": 3,
+   "ticker": "PN",
+   "cs_spread_bps": 215.5,
+   "dv_usd": 213200.0
+  },
+  {
+   "decile": 3,
+   "ticker": "WAFDP",
+   "cs_spread_bps": 24.8,
+   "dv_usd": 213590.0
+  },
+  {
+   "decile": 3,
+   "ticker": "ELWT",
+   "cs_spread_bps": 399.4,
+   "dv_usd": 213624.0
+  },
+  {
+   "decile": 3,
+   "ticker": "SDST",
+   "cs_spread_bps": 178.9,
+   "dv_usd": 213720.0
+  },
+  {
+   "decile": 3,
+   "ticker": "ADC-PA",
+   "cs_spread_bps": 28.3,
+   "dv_usd": 213721.0
+  },
+  {
+   "decile": 3,
+   "ticker": "VALN",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 213940.0
+  },
+  {
+   "decile": 3,
+   "ticker": "ORGN",
+   "cs_spread_bps": 150.4,
+   "dv_usd": 214000.0
+  },
+  {
+   "decile": 3,
+   "ticker": "AHL-PE",
+   "cs_spread_bps": 32.9,
+   "dv_usd": 214152.0
+  },
+  {
+   "decile": 3,
+   "ticker": "KIM-PL",
+   "cs_spread_bps": 18.8,
+   "dv_usd": 215451.0
+  },
+  {
+   "decile": 3,
+   "ticker": "VABK",
+   "cs_spread_bps": 5.8,
+   "dv_usd": 216000.0
+  },
+  {
+   "decile": 3,
+   "ticker": "ULBI",
+   "cs_spread_bps": 108.2,
+   "dv_usd": 216147.0
+  },
+  {
+   "decile": 4,
+   "ticker": "BHR",
+   "cs_spread_bps": 70.5,
+   "dv_usd": 662640.0
+  },
+  {
+   "decile": 4,
+   "ticker": "SUNS",
+   "cs_spread_bps": 83.4,
+   "dv_usd": 664000.0
+  },
+  {
+   "decile": 4,
+   "ticker": "ACIU",
+   "cs_spread_bps": 159.0,
+   "dv_usd": 664050.0
+  },
+  {
+   "decile": 4,
+   "ticker": "USB-PA",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 664930.0
+  },
+  {
+   "decile": 4,
+   "ticker": "RLYB",
+   "cs_spread_bps": 192.0,
+   "dv_usd": 665160.0
+  },
+  {
+   "decile": 4,
+   "ticker": "MRCC",
+   "cs_spread_bps": 70.1,
+   "dv_usd": 665480.0
+  },
+  {
+   "decile": 4,
+   "ticker": "CVV",
+   "cs_spread_bps": 150.5,
+   "dv_usd": 666460.0
+  },
+  {
+   "decile": 4,
+   "ticker": "NNNN",
+   "cs_spread_bps": 202.2,
+   "dv_usd": 672100.0
+  },
+  {
+   "decile": 4,
+   "ticker": "ALOT",
+   "cs_spread_bps": 45.3,
+   "dv_usd": 674591.0
+  },
+  {
+   "decile": 4,
+   "ticker": "CMDB",
+   "cs_spread_bps": 83.3,
+   "dv_usd": 677540.0
+  },
+  {
+   "decile": 4,
+   "ticker": "AARD",
+   "cs_spread_bps": 136.7,
+   "dv_usd": 678300.0
+  },
+  {
+   "decile": 5,
+   "ticker": "ONIT",
+   "cs_spread_bps": 78.9,
+   "dv_usd": 2069720.0
+  },
+  {
+   "decile": 5,
+   "ticker": "COFS",
+   "cs_spread_bps": 53.3,
+   "dv_usd": 2080880.0
+  },
+  {
+   "decile": 5,
+   "ticker": "SGMO",
+   "cs_spread_bps": 145.8,
+   "dv_usd": 2087020.0
+  },
+  {
+   "decile": 5,
+   "ticker": "SRZN",
+   "cs_spread_bps": 115.6,
+   "dv_usd": 2087440.0
+  },
+  {
+   "decile": 5,
+   "ticker": "PACK",
+   "cs_spread_bps": 11.8,
+   "dv_usd": 2091520.0
+  },
+  {
+   "decile": 5,
+   "ticker": "LAB",
+   "cs_spread_bps": 155.6,
+   "dv_usd": 2102426.0
+  },
+  {
+   "decile": 5,
+   "ticker": "ACIC",
+   "cs_spread_bps": 56.9,
+   "dv_usd": 2103260.0
+  },
+  {
+   "decile": 5,
+   "ticker": "AUTL",
+   "cs_spread_bps": 44.0,
+   "dv_usd": 2113180.0
+  },
+  {
+   "decile": 5,
+   "ticker": "VOXR",
+   "cs_spread_bps": 58.9,
+   "dv_usd": 2114080.0
+  },
+  {
+   "decile": 5,
+   "ticker": "FBIZ",
+   "cs_spread_bps": 48.9,
+   "dv_usd": 2114476.0
+  },
+  {
+   "decile": 5,
+   "ticker": "GLDG",
+   "cs_spread_bps": 70.6,
+   "dv_usd": 2114600.0
+  },
+  {
+   "decile": 6,
+   "ticker": "ANGI",
+   "cs_spread_bps": 47.1,
+   "dv_usd": 5907600.0
+  },
+  {
+   "decile": 6,
+   "ticker": "DAKT",
+   "cs_spread_bps": 30.0,
+   "dv_usd": 5915840.0
+  },
+  {
+   "decile": 6,
+   "ticker": "TOI",
+   "cs_spread_bps": 98.7,
+   "dv_usd": 5921100.0
+  },
+  {
+   "decile": 6,
+   "ticker": "SLI",
+   "cs_spread_bps": 36.0,
+   "dv_usd": 5932170.0
+  },
+  {
+   "decile": 6,
+   "ticker": "LRMR",
+   "cs_spread_bps": 155.8,
+   "dv_usd": 5943090.0
+  },
+  {
+   "decile": 6,
+   "ticker": "CEPT",
+   "cs_spread_bps": 44.8,
+   "dv_usd": 5974150.0
+  },
+  {
+   "decile": 6,
+   "ticker": "MNSO",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 5976190.0
+  },
+  {
+   "decile": 6,
+   "ticker": "STRD",
+   "cs_spread_bps": 25.2,
+   "dv_usd": 5978700.0
+  },
+  {
+   "decile": 6,
+   "ticker": "DSGN",
+   "cs_spread_bps": 145.5,
+   "dv_usd": 5980500.0
+  },
+  {
+   "decile": 6,
+   "ticker": "MX",
+   "cs_spread_bps": 31.0,
+   "dv_usd": 5993220.0
+  },
+  {
+   "decile": 6,
+   "ticker": "MCHB",
+   "cs_spread_bps": 68.3,
+   "dv_usd": 5993820.0
+  },
+  {
+   "decile": 6,
+   "ticker": "AAT",
+   "cs_spread_bps": 31.3,
+   "dv_usd": 6004860.0
+  },
+  {
+   "decile": 7,
+   "ticker": "LPG",
+   "cs_spread_bps": 12.2,
+   "dv_usd": 15479550.0
+  },
+  {
+   "decile": 7,
+   "ticker": "IVR",
+   "cs_spread_bps": 12.0,
+   "dv_usd": 15526280.0
+  },
+  {
+   "decile": 7,
+   "ticker": "PGEN",
+   "cs_spread_bps": 99.5,
+   "dv_usd": 15532330.0
+  },
+  {
+   "decile": 7,
+   "ticker": "CLOV",
+   "cs_spread_bps": 80.0,
+   "dv_usd": 15544800.0
+  },
+  {
+   "decile": 7,
+   "ticker": "GLIBK",
+   "cs_spread_bps": 115.9,
+   "dv_usd": 15553780.0
+  },
+  {
+   "decile": 7,
+   "ticker": "TRVI",
+   "cs_spread_bps": 143.4,
+   "dv_usd": 15557000.0
+  },
+  {
+   "decile": 7,
+   "ticker": "MAZE",
+   "cs_spread_bps": 180.0,
+   "dv_usd": 15564360.0
+  },
+  {
+   "decile": 7,
+   "ticker": "CNS",
+   "cs_spread_bps": 21.4,
+   "dv_usd": 15582833.0
+  },
+  {
+   "decile": 7,
+   "ticker": "TILE",
+   "cs_spread_bps": 43.5,
+   "dv_usd": 15596610.0
+  },
+  {
+   "decile": 7,
+   "ticker": "PAYO",
+   "cs_spread_bps": 48.9,
+   "dv_usd": 15598470.0
+  },
+  {
+   "decile": 7,
+   "ticker": "ABAT",
+   "cs_spread_bps": 119.1,
+   "dv_usd": 15600390.0
+  },
+  {
+   "decile": 7,
+   "ticker": "RLJ",
+   "cs_spread_bps": 65.8,
+   "dv_usd": 15600750.0
+  },
+  {
+   "decile": 8,
+   "ticker": "NN",
+   "cs_spread_bps": 134.7,
+   "dv_usd": 38520700.0
+  },
+  {
+   "decile": 8,
+   "ticker": "VCTR",
+   "cs_spread_bps": 40.3,
+   "dv_usd": 38543215.0
+  },
+  {
+   "decile": 8,
+   "ticker": "GLBE",
+   "cs_spread_bps": 45.9,
+   "dv_usd": 38597950.0
+  },
+  {
+   "decile": 8,
+   "ticker": "PFSI",
+   "cs_spread_bps": 28.9,
+   "dv_usd": 38708232.0
+  },
+  {
+   "decile": 8,
+   "ticker": "LTM",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 38726220.0
+  },
+  {
+   "decile": 8,
+   "ticker": "IMVT",
+   "cs_spread_bps": 111.7,
+   "dv_usd": 38868800.0
+  },
+  {
+   "decile": 8,
+   "ticker": "AEG",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 38904600.0
+  },
+  {
+   "decile": 8,
+   "ticker": "SMFG",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 39051460.0
+  },
+  {
+   "decile": 8,
+   "ticker": "WTM",
+   "cs_spread_bps": 19.7,
+   "dv_usd": 39055680.0
+  },
+  {
+   "decile": 8,
+   "ticker": "ALGT",
+   "cs_spread_bps": 55.0,
+   "dv_usd": 39064350.0
+  },
+  {
+   "decile": 8,
+   "ticker": "FMC",
+   "cs_spread_bps": 28.8,
+   "dv_usd": 39072600.0
+  },
+  {
+   "decile": 8,
+   "ticker": "ABG",
+   "cs_spread_bps": 13.0,
+   "dv_usd": 39076900.0
+  },
+  {
+   "decile": 9,
+   "ticker": "GSAT",
+   "cs_spread_bps": 48.3,
+   "dv_usd": 95495400.0
+  },
+  {
+   "decile": 9,
+   "ticker": "AHR",
+   "cs_spread_bps": 60.1,
+   "dv_usd": 95540700.0
+  },
+  {
+   "decile": 9,
+   "ticker": "IRDM",
+   "cs_spread_bps": 20.8,
+   "dv_usd": 95548640.0
+  },
+  {
+   "decile": 9,
+   "ticker": "ESS",
+   "cs_spread_bps": 39.7,
+   "dv_usd": 95686080.0
+  },
+  {
+   "decile": 9,
+   "ticker": "SNA",
+   "cs_spread_bps": 28.4,
+   "dv_usd": 96167500.0
+  },
+  {
+   "decile": 9,
+   "ticker": "REG",
+   "cs_spread_bps": 27.9,
+   "dv_usd": 96286960.0
+  },
+  {
+   "decile": 9,
+   "ticker": "LFUS",
+   "cs_spread_bps": 23.6,
+   "dv_usd": 96316560.0
+  },
+  {
+   "decile": 9,
+   "ticker": "LBRT",
+   "cs_spread_bps": 55.8,
+   "dv_usd": 96516035.0
+  },
+  {
+   "decile": 9,
+   "ticker": "GKOS",
+   "cs_spread_bps": 29.4,
+   "dv_usd": 96566280.0
+  },
+  {
+   "decile": 9,
+   "ticker": "TS",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 96673506.0
+  },
+  {
+   "decile": 9,
+   "ticker": "ANF",
+   "cs_spread_bps": 62.1,
+   "dv_usd": 96683360.0
+  },
+  {
+   "decile": 9,
+   "ticker": "BOOT",
+   "cs_spread_bps": 20.9,
+   "dv_usd": 96729750.0
+  },
+  {
+   "decile": 10,
+   "ticker": "CPNG",
+   "cs_spread_bps": 21.8,
+   "dv_usd": 346676680.0
+  },
+  {
+   "decile": 10,
+   "ticker": "XEL",
+   "cs_spread_bps": 35.2,
+   "dv_usd": 346886510.0
+  },
+  {
+   "decile": 10,
+   "ticker": "VALE",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 347153310.0
+  },
+  {
+   "decile": 10,
+   "ticker": "HUM",
+   "cs_spread_bps": 41.6,
+   "dv_usd": 348342330.0
+  },
+  {
+   "decile": 10,
+   "ticker": "DUK",
+   "cs_spread_bps": 21.4,
+   "dv_usd": 350558544.0
+  },
+  {
+   "decile": 10,
+   "ticker": "MTSI",
+   "cs_spread_bps": 25.5,
+   "dv_usd": 351155350.0
+  },
+  {
+   "decile": 10,
+   "ticker": "IBKR",
+   "cs_spread_bps": 16.2,
+   "dv_usd": 352576362.0
+  },
+  {
+   "decile": 10,
+   "ticker": "KEYS",
+   "cs_spread_bps": 4.4,
+   "dv_usd": 353994820.0
+  },
+  {
+   "decile": 10,
+   "ticker": "CNQ",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 354233100.0
+  },
+  {
+   "decile": 10,
+   "ticker": "CTSH",
+   "cs_spread_bps": 24.2,
+   "dv_usd": 354488736.0
+  },
+  {
+   "decile": 10,
+   "ticker": "HUT",
+   "cs_spread_bps": 0.0,
+   "dv_usd": 354744090.0
+  },
+  {
+   "decile": 10,
+   "ticker": "CTAS",
+   "cs_spread_bps": 32.8,
+   "dv_usd": 355556760.0
+  }
+ ]
+}
