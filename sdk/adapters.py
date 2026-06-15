@@ -534,6 +534,68 @@ def binance_klines(symbols=CRYPTO_MAJORS, market="perp", start="2019-01-01", int
     return panel.sort_index()
 
 
+# Coin Metrics COMMUNITY on-chain/network metrics ($0, no key, CC BY-NC -> PERSONAL RESEARCH ONLY).
+# Asset tickers are lowercase CM names (btc/eth/sol/...). Common FREE community metrics:
+#   PriceUSD, AdrActCnt (active addresses), TxCnt, TxTfrValAdjUSD (adjusted transfer value USD),
+#   FeeTotUSD, SplyCur (current supply), CapRealUSD (realized cap), CapMrktCurUSD (market cap),
+#   HashRate, DiffMean, IssTotUSD (issuance). Availability varies by asset; paid metrics 403 -> dropped.
+CM_COMMUNITY_MAJORS = ("btc", "eth", "sol", "bnb", "xrp", "ada", "doge", "avax", "link", "ltc", "dot", "trx")
+_CM_COMMUNITY = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
+
+
+def coinmetrics_metrics(assets=CM_COMMUNITY_MAJORS, metrics=("PriceUSD", "AdrActCnt"),
+                        frequency="1d", start="2010-01-01") -> pd.DataFrame:
+    """Daily on-chain / network + market metrics from the Coin Metrics COMMUNITY API ($0, no key).
+    LICENSE: Creative Commons BY-NC -> PERSONAL/NON-COMMERCIAL research only (not for resale/redistribution).
+    Returns a MultiIndex-column panel (asset, metric) indexed by date. Day-cached, paginated, rate-limit
+    polite (community: 10 req / 6s per IP). The on-chain FUNDAMENTALS layer beyond market microstructure
+    (active addresses, tx value, fees, realized cap, supply, hashrate, issuance). NOTE: some metrics are
+    paid-only on community (HTTP 403 -> that metric/asset is simply absent); 'reviewable' metrics may be
+    minorly revised vs their original flash value (acceptable for daily backtests, flagged for honesty).
+    """
+    import time as _t
+    if isinstance(assets, str):  # footgun class: 'btc' -> 'b','t','c'
+        assets = [assets]
+    if isinstance(metrics, str):
+        metrics = [metrics]
+    cache = _day_cache("cm_community", [frequency, *sorted(assets), *sorted(metrics)])
+    if cache and os.path.exists(cache):
+        return pd.read_parquet(cache)
+    base = (f"{_CM_COMMUNITY}?assets={','.join(assets)}&metrics={','.join(metrics)}"
+            f"&frequency={frequency}&start_time={start}&page_size=10000&paging_from=start"
+            f"&ignore_forbidden_errors=true&ignore_unsupported_errors=true")
+    rows, url = [], base
+    for _ in range(200):  # hard page cap (safety)
+        try:
+            resp = json.loads(_http_get(url, timeout=40))
+        except Exception:
+            break
+        rows += resp.get("data", [])
+        nxt = resp.get("next_page_url")
+        if not nxt:
+            break
+        url = nxt
+        _t.sleep(0.7)  # community 10 req / 6s
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["time"]).dt.tz_localize(None).dt.normalize()
+    metric_cols = [c for c in df.columns if c not in ("asset", "time", "date")]
+    long = df.melt(id_vars=["asset", "date"], value_vars=metric_cols, var_name="metric", value_name="val")
+    long["val"] = pd.to_numeric(long["val"], errors="coerce")
+    panel = long.pivot_table(index="date", columns=["asset", "metric"], values="val")
+    panel.columns.names = ["asset", "metric"]
+    panel = panel.sort_index()
+    if cache and not panel.empty:
+        try:
+            tmp = cache + ".tmp"
+            panel.to_parquet(tmp)
+            os.replace(tmp, cache)
+        except OSError:
+            pass
+    return panel
+
+
 def treasury_auctions(types=("Note", "Bond"), start="2010-01-01") -> pd.DataFrame:
     """US Treasury auction calendar/history from the free TreasuryDirect API (depth: 1979+).
     Long DataFrame [auction_date, announcement_date, issue_date, sec_type, term, cusip,

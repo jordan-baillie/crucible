@@ -85,3 +85,22 @@ def test_binance_klines_bare_string_guard():
     from sdk import adapters
     src = inspect.getsource(adapters.binance_klines)
     assert "isinstance(symbols, str)" in src  # the guard is present
+
+
+@pytest.mark.network
+def test_coinmetrics_community_metrics():
+    from sdk.adapters import coinmetrics_metrics, CM_COMMUNITY_MAJORS
+    assert "btc" in CM_COMMUNITY_MAJORS
+    p = coinmetrics_metrics(("btc",), ("PriceUSD", "AdrActCnt", "CapMVRVCur"))
+    assert not p.empty
+    free = {m for (_, m) in p.columns}
+    assert {"PriceUSD", "AdrActCnt"} <= free   # known free community metrics
+    assert p.index.min().year <= 2011          # deep daily history
+    assert p[("btc", "AdrActCnt")].dropna().iloc[-1] > 0
+
+
+def test_coinmetrics_bare_string_guard():
+    import inspect
+    from sdk import adapters
+    src = inspect.getsource(adapters.coinmetrics_metrics)
+    assert "isinstance(assets, str)" in src and "isinstance(metrics, str)" in src
