@@ -1,7 +1,10 @@
 """Scout: the 'ingest external sources' step. Searches the web for NEW edges/strategies based on
 wiki gaps, distills findings into the wiki, and queues testable candidates for the propose step.
 This makes generation OPEN (discovers what others run) instead of only recombining what we know.
-Pattern: karpathy LLM-Wiki 'ingest' + a research scout. LLM via the pi CLI + brave-search."""
+Pattern: karpathy LLM-Wiki 'ingest' + a research scout. LLM via the pi CLI; web via Brave (broad
+web+news snippets) AND Firecrawl `categories:[research]` (arXiv/SSRN/ResearchGate academic papers).
+Both feed the SAME wiki-grounded Claude-Max distillation; Firecrawl is additive + graceful (never
+breaks the scout if its key/endpoint is down). ~8 Firecrawl credits/run (search-only)."""
 import json
 from datetime import date
 from pathlib import Path
@@ -25,6 +28,15 @@ def _brave(query, n=5):
         return rich_search_text(query)
     except Exception as e:
         return f"(search failed: {e})"
+
+
+def _papers(query):
+    """Firecrawl research-category layer (academic papers). Additive + graceful: never breaks the scout."""
+    try:
+        from agent.firecrawl import rich_research_text
+        return rich_research_text(query)
+    except Exception as e:
+        return f"(research search failed: {e})"
 
 
 def _json(text):
@@ -53,8 +65,10 @@ def scout(n_queries=4):
     queries = _json(q_raw) or ["systematic risk premia retail backtest 2025 carry trend vol",
                                "crypto delta neutral funding basis strategy 2025"]
     queries = queries[:n_queries]
-    # 2. search
-    results = "\n\n".join(f"### QUERY: {q}\n{_brave(q)}" for q in queries)
+    # 2. search — broad web+news (Brave) AND academic papers (Firecrawl research category)
+    results = "\n\n".join(
+        f"### QUERY: {q}\n{_brave(q)}\n\n[ACADEMIC PAPERS — research frontier]\n{_papers(q)}"
+        for q in queries)
     # 3. distill into structured findings + testable candidates (with sources), flag contradictions
     d_raw = _pi(f"{ctx}\n\n=== WEB SEARCH RESULTS ===\n{results}\n\n"
                 f"Distill these into NEW knowledge for the wiki. Return ONLY JSON:\n"
