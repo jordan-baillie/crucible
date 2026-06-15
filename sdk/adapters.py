@@ -1022,12 +1022,11 @@ def sec_insider(ticker: str, limit: int = 30) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values("date").reset_index(drop=True) if rows else pd.DataFrame()
 
 
-# --- #60 EIA energy fundamentals (FREE but needs a free key -> KEY-PENDING, untested until registered)
+# --- #60 EIA energy fundamentals (FREE; keyed + live-verified 2026-06-16: US crude stocks, 179 wk obs)
 def eia_series(series_id: str, start: str = "2010-01-01") -> pd.Series:
     """EIA energy fundamentals (inventories/production/prices) — commodity-futures CONDITIONING.
-    FREE but needs a free key: env EIA_API_KEY or secrets 'eia_api_key' (register: eia.gov/opendata).
-    e.g. eia_series('PET.WCESTUS1.W') = US crude stocks (weekly). USDA NASS follows the same key-pending
-    pattern (usda.gov Quick Stats key). KEY-PENDING until a key is added."""
+    FREE; needs a free key: env EIA_API_KEY or secrets 'eia_api_key' (register: eia.gov/opendata).
+    e.g. eia_series('PET.WCESTUS1.W') = US crude stocks (weekly). Raises loudly if no key is configured."""
     from crucible_paths import SECRETS
     key = os.environ.get("EIA_API_KEY")
     if not key:
@@ -1046,9 +1045,12 @@ def eia_series(series_id: str, start: str = "2010-01-01") -> pd.Series:
 
 def usda_nass(commodity_desc: str, statisticcat_desc: str = "STOCKS", **params) -> pd.DataFrame:
     """USDA NASS Quick Stats (ag production/stocks/estimates) — commodity-futures CONDITIONING for
-    grains/softs (ZC/ZS/ZW). FREE but needs a free key: env USDA_NASS_KEY or secrets 'usda_nass_key'
-    (register: quickstats.nass.usda.gov/api). KEY-PENDING. Returns the matching rows as a DataFrame
-    (filter to the Value/year columns you need). e.g. usda_nass('CORN', statisticcat_desc='STOCKS')."""
+    grains/softs (ZC/ZS/ZW). FREE; needs a free key: env USDA_NASS_KEY or secrets 'usda_nass_key'
+    (register: quickstats.nass.usda.gov/api). Keyed + live-verified 2026-06-16 (CORN stocks). Returns
+    the matching rows as a DataFrame (filter to the Value/year columns you need; 'Value' is a
+    comma-formatted string). NASS caps a query at 50k rows — narrow with agg_level_desc/year params
+    on broad commodities. PIT: condition on the report RELEASE date, not the survey reference period.
+    e.g. usda_nass('CORN', statisticcat_desc='STOCKS')."""
     import urllib.parse
     from crucible_paths import SECRETS
     key = os.environ.get("USDA_NASS_KEY")
