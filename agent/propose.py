@@ -83,6 +83,7 @@ Return ONLY a JSON object:
 {{"title": "...", "premium": "...", "market": "...", "data_source": "...", "free_or_owned": "...",
 "signal_approach": "one-paragraph frozen construction", "why_not_duplicate": "...", "prior": "low|medium|high",
 "pairs_with": "...", "gate0_data_check": "what to verify before building",
+"seeded_by": "the EXACT title of the WEB-SCOUTED CANDIDATE above that this hypothesis is built on, or 'self' if it is novel / a recombination of wiki knowledge NOT taken from the scouted list. Be honest — this is measured, not graded.",
 "crowding_risk": "low|medium|high — how heavily-published/arbitraged is this edge? (favour low)",
 "retail_tradable_5k": "yes|no — can THIS construction be executed at ~$5K via IB/Alpaca (instruments routable, short leg borrowable or index-hedged, no >2x gross leverage)? If no, this proposal will be DOWN-RANKED — prefer redesigning it to a deployable variant",
 "scope": "broad|local — broad if a UNIVERSAL mechanism (theory says it appears across markets; a pass must later GENERALISE) or local if defensibly universe-specific (then forward-validation confirms it)",
