@@ -1,0 +1,311 @@
+{
+  "n_modules": 107,
+  "evaluated": 72,
+  "not_evaluated": 16,
+  "errors": 19,
+  "skipped": 0,
+  "macro_r2_dist": {
+    "n": 72,
+    "min": 0.0,
+    "p10": 0.005,
+    "p25": 0.024,
+    "median": 0.08,
+    "p75": 0.27,
+    "p90": 0.465,
+    "max": 0.595,
+    "mean": 0.173
+  },
+  "sharpe_drop_dist": {
+    "n": 72,
+    "min": -0.428,
+    "p10": -0.287,
+    "p25": -0.119,
+    "median": -0.012,
+    "p75": 0.018,
+    "p90": 0.069,
+    "max": 0.327,
+    "mean": -0.056
+  },
+  "gross_sharpe_dist": {
+    "n": 72,
+    "min": -1.984,
+    "p10": -0.6,
+    "p25": -0.086,
+    "median": 0.419,
+    "p75": 0.776,
+    "p90": 1.178,
+    "max": 9.636,
+    "mean": 0.43
+  },
+  "macro_residual_sharpe_dist": {
+    "n": 72,
+    "min": -1.984,
+    "p10": -0.585,
+    "p25": -0.122,
+    "median": 0.42,
+    "p75": 0.94,
+    "p90": 1.28,
+    "max": 9.649,
+    "mean": 0.487
+  },
+  "would_demote_count": 1,
+  "would_demote_ids": [
+    "ust_rolldown_regime_carry"
+  ],
+  "vif_equity_block": {
+    "dur": 1.69,
+    "slope": 1.32,
+    "breakeven": 1.41,
+    "credit": 1.01,
+    "usd": 1.26,
+    "oil": 1.17,
+    "vol": 1.16,
+    "gold": 1.21
+  },
+  "vif_crypto_block": {
+    "btc": 2.97,
+    "eth": 3.01,
+    "usd": 1.2,
+    "gold": 1.15,
+    "vol": 1.16
+  },
+  "not_evaluated_reasons": {
+    "amihud_illiq_tranched_v3": "macro factor(s) below 80% coverage: ['usd']",
+    "fut_skew_premium_v1": "macro factor(s) below 80% coverage: ['usd', 'gold']",
+    "hedging_pressure_footprint_ls_v2": "macro factor(s) below 80% coverage: ['usd']",
+    "futures_seasonality_xs_v1": "macro factor(s) below 80% coverage: ['usd', 'gold']",
+    "amihud_illiquidity_smallcap": "macro factor(s) below 80% coverage: ['usd']",
+    "futures_xs_skew_premium": "macro factor(s) below 80% coverage: ['usd', 'gold']",
+    "prefomc_duration_v1": "macro factor(s) below 80% coverage: ['breakeven', 'usd', 'gold']",
+    "new_listing_neglect_v1": "macro factor(s) below 80% coverage: ['breakeven', 'usd', 'gold']",
+    "smid_value_momentum": "macro factor(s) below 80% coverage: ['usd']",
+    "amihud_illiq_longonly_etfhedge_v1": "macro factor(s) below 80% coverage: ['usd', 'gold']",
+    "russell2000_recon_deletion_flow_v1": "macro factor(s) below 80% coverage: ['breakeven', 'usd', 'gold']",
+    "amihud_illiq_compressed_short_v3": "macro factor(s) below 80% coverage: ['usd', 'gold']",
+    "amihud_illiq_concentrated_short_v3": "macro factor(s) below 80% coverage: ['usd', 'gold']",
+    "amihud_illiq_topN_borrowable_short_v3": "macro factor(s) below 80% coverage: ['usd', 'gold']",
+    "amihud_illiq_idxhedge_v2": "macro factor(s) below 80% coverage: ['usd', 'gold']"
+  },
+  "errors_detail": {
+    "auto_carry_x_trend_two_premium_book": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "comm_hedging_pressure_cot_ls_v1": "TypeError: cot_positioning() got an unexpected keyword argument 'field'",
+    "hedging_pressure_cot_xs_v1": "KeyError: \"none of ('oi', 'open_interest') in columns ['CL_comm_net', 'CL_noncomm_net', 'CL_oi']\"",
+    "auto_crypto_idiosyncratic_skewness_lottery_pr_smith1_68617": "SyntaxError: invalid syntax (auto_crypto_idiosyncratic_skewness_lottery_pr_smith1_68617.py, line 1)",
+    "auto_crypto_short_term_reversal_as_a_liquidit_smith1_97836": "SyntaxError: invalid character '\u2014' (U+2014) (auto_crypto_short_term_reversal_as_a_liquidit_smith1_97836.py, line 1)",
+    "auto_delta_neutral_crypto_funding_carry_long_spot_sho_5144": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_net_share_issuance_factor_long_low_issua_suance_27204": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_net_share_issuance_factor_long_low_issua_suance_28664": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_pead_illiquidity_conditioned_under_react_smith3_23202": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_post_earnings_announcement_drift_pead_un_smith3_23695": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_post_earnings_announcement_drift_sue_mid_smith1_67125": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_regime_switched_short_volatility_vrp_har_smith1_40064": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_srw_sue_post_earnings_announcement_drift_smith3_22551": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_sue_based_post_earnings_announcement_dri_smith2_22655": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_value_momentum_complementary_combination_smith1_99655": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_value_momentum_complementary_combination_smith3_69556": "SyntaxError: invalid character '\u2192' (U+2192) (auto_value_momentum_complementary_combination_smith3_69556.py, line 1)",
+    "auto_value_momentum_trend_overlay_large_cap_t_ithmtl_1968": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)",
+    "auto_value_momentum_trend_overlay_mid_cap_tie_ithmtm_1970": "ImportError: cannot import name 'carry_returns' from 'sdk.adapters' (/root/crucible/sdk/adapters.py)"
+  },
+  "top_r2": [
+    {
+      "id": "vvix_vix_divergence_gate",
+      "family": "volatility_conditioning",
+      "is_crypto": false,
+      "macro_r2": 0.595,
+      "gross": 0.479,
+      "neutral": 0.824,
+      "p": 0.0,
+      "drop": -0.345
+    },
+    {
+      "id": "ust_rolldown_regime_carry",
+      "family": "term_premium_carry",
+      "is_crypto": false,
+      "macro_r2": 0.567,
+      "gross": 0.222,
+      "neutral": 0.094,
+      "p": 0.0,
+      "drop": 0.128
+    },
+    {
+      "id": "amihud_illiq_etf_hedged_v2",
+      "family": "liquidity_premium",
+      "is_crypto": false,
+      "macro_r2": 0.554,
+      "gross": 0.755,
+      "neutral": 1.18,
+      "p": 0.0,
+      "drop": -0.425
+    },
+    {
+      "id": "div_month_premium_mid",
+      "family": "event_flow_pressure",
+      "is_crypto": false,
+      "macro_r2": 0.513,
+      "gross": 0.529,
+      "neutral": 0.808,
+      "p": 0.0,
+      "drop": -0.279
+    },
+    {
+      "id": "value_momentum_complementary_xs_v1",
+      "family": "value_momentum",
+      "is_crypto": false,
+      "macro_r2": 0.51,
+      "gross": 0.78,
+      "neutral": 1.116,
+      "p": 0.0,
+      "drop": -0.336
+    },
+    {
+      "id": "auto_defensive_bab_lowvol",
+      "family": "defensive",
+      "is_crypto": false,
+      "macro_r2": 0.492,
+      "gross": 0.669,
+      "neutral": 0.973,
+      "p": 0.0,
+      "drop": -0.304
+    },
+    {
+      "id": "midcap_value_momentum_composite",
+      "family": "cross_sectional_equity_factor",
+      "is_crypto": false,
+      "macro_r2": 0.487,
+      "gross": 0.561,
+      "neutral": 0.849,
+      "p": 0.0,
+      "drop": -0.288
+    },
+    {
+      "id": "value_bm_smallcap_lowturn",
+      "family": "value",
+      "is_crypto": false,
+      "macro_r2": 0.466,
+      "gross": 1.031,
+      "neutral": 1.459,
+      "p": 0.0,
+      "drop": -0.428
+    },
+    {
+      "id": "value_momentum_complementary_combination",
+      "family": "equity_factor_combination",
+      "is_crypto": false,
+      "macro_r2": 0.453,
+      "gross": 0.704,
+      "neutral": 0.962,
+      "p": 0.0,
+      "drop": -0.258
+    },
+    {
+      "id": "net_repurchaser_smallcap_v1",
+      "family": "share_issuance",
+      "is_crypto": false,
+      "macro_r2": 0.451,
+      "gross": 0.415,
+      "neutral": 0.623,
+      "p": 0.0,
+      "drop": -0.208
+    },
+    {
+      "id": "gain_reversal_frequency_v1",
+      "family": "liquidity_provision",
+      "is_crypto": false,
+      "macro_r2": 0.449,
+      "gross": 0.369,
+      "neutral": 0.538,
+      "p": 0.0,
+      "drop": -0.169
+    },
+    {
+      "id": "auto_value_momentum_complementary_equity_comb",
+      "family": "equity_factor_combo",
+      "is_crypto": false,
+      "macro_r2": 0.446,
+      "gross": 0.508,
+      "neutral": 0.724,
+      "p": 0.0,
+      "drop": -0.216
+    },
+    {
+      "id": "credit_carry_usd_overlay",
+      "family": "credit_carry",
+      "is_crypto": false,
+      "macro_r2": 0.433,
+      "gross": -0.469,
+      "neutral": -0.448,
+      "p": 0.0,
+      "drop": -0.021
+    },
+    {
+      "id": "betting_against_beta_defensive_premium",
+      "family": "defensive",
+      "is_crypto": false,
+      "macro_r2": 0.419,
+      "gross": 0.918,
+      "neutral": 1.223,
+      "p": 0.0,
+      "drop": -0.305
+    },
+    {
+      "id": "dividend_month_premium_mid_v1",
+      "family": "event_flow_div_month",
+      "is_crypto": false,
+      "macro_r2": 0.418,
+      "gross": 0.599,
+      "neutral": 0.835,
+      "p": 0.0,
+      "drop": -0.236
+    },
+    {
+      "id": "amihud_illiq_topN_short_v3_hedge_declared",
+      "family": "amihud_illiquidity",
+      "is_crypto": false,
+      "macro_r2": 0.402,
+      "gross": 0.926,
+      "neutral": 1.318,
+      "p": 0.0,
+      "drop": -0.392
+    },
+    {
+      "id": "crypto-native-tsmom-standalone",
+      "family": "trend",
+      "is_crypto": true,
+      "macro_r2": 0.381,
+      "gross": 0.569,
+      "neutral": 0.242,
+      "p": 0.0,
+      "drop": 0.327
+    },
+    {
+      "id": "valmom_large_trend_overlay",
+      "family": "value_momentum",
+      "is_crypto": false,
+      "macro_r2": 0.288,
+      "gross": 0.984,
+      "neutral": 1.158,
+      "p": 0.0,
+      "drop": -0.174
+    },
+    {
+      "id": "amihud_tranched_x_trend10_etf",
+      "family": "combination",
+      "is_crypto": false,
+      "macro_r2": 0.264,
+      "gross": 0.903,
+      "neutral": 1.081,
+      "p": 0.0,
+      "drop": -0.178
+    },
+    {
+      "id": "amihud_illiq_x_trend_9etf_breadth_v1",
+      "family": "illiquidity_x_trend_combination",
+      "is_crypto": false,
+      "macro_r2": 0.227,
+      "gross": 1.402,
+      "neutral": 1.528,
+      "p": 0.0,
+      "drop": -0.126
+    }
+  ]
+}
