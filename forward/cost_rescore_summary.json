@@ -1,0 +1,13 @@
+{
+ "rescored": 101,
+ "pre_reg": "prereg-cost-aware-deployability-gate (FROZEN 2026-06-15)",
+ "ladders": "central + conservative",
+ "counts": {
+  "survives_screen": 28,
+  "custom_cost_not_repriced": 27,
+  "ERROR": 20,
+  "borrow_infeasible": 15,
+  "cost_killed": 11
+ },
+ "verdict": "PHYSICS for retail equity"
+}
