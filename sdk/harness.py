@@ -35,6 +35,14 @@ MACRO_MIN_OBS = 500          # frozen: overlapping obs for a stable 8-factor hed
 MACRO_COVERAGE_FLOOR = 0.80   # frozen: each factor must cover >= this share of the search window
 MACRO_DEMOTES_FROM = "2026-06-29"  # frozen phase-in: demotion reserved for activation change (needs calibration too)
 
+# --- SHARPE-INFERENCE gate (prereg-sharpe-inference-gate.md, FROZEN 2026-06-15). HARD gate = Lo
+#     serial-correlation correction (NOT covered by DSR); PSR/MinTRL are DIAGNOSTICS (dominated by DSR).
+#     Annotate-only until SHARPE_INFERENCE_DEMOTES_FROM + calibration.
+LO_DEFLATION_FLOOR = 0.70    # frozen: Lo-adjusted/naive Sharpe below this = materially serial-corr-inflated
+LO_SHARPE_FLOOR = 0.5        # frozen: Lo-adjusted annualized Sharpe a serial-corr-inflated strat must clear
+LO_MIN_OBS = 252             # frozen: evaluability floor (1y daily) for autocorrelation/PSR
+SHARPE_INFERENCE_DEMOTES_FROM = "2026-06-29"  # frozen phase-in (demotion needs calibration too)
+
 
 @dataclass
 class StrategySpec:
@@ -670,9 +678,41 @@ def _gc_macro_confound(ctx: GateContext) -> CheckResult:
                  "macro_residual_sharpe": mn.get("macro_residual_sharpe"), "macro_confound": confound})
 
 
-# Registry ORDER == legacy demotion order (+ macro last, date-gated inert today).
+def _gc_sharpe_inference(ctx: GateContext) -> CheckResult:
+    # HARD gate = Lo serial-correlation inflation (NOT covered by DSR). PSR/MinTRL recorded as
+    # DIAGNOSTICS only (monotonically dominated by DSR). ANNOTATE-ONLY until the date-gate + calibration.
+    from sdk.stats import (sharpe as _shp, lo_deflation_factor,
+                           probabilistic_sharpe_ratio, min_track_record_length)
+    r = ctx.search
+    n = int(pd.Series(r).dropna().shape[0])
+    evaluated = n >= LO_MIN_OBS
+    naive = _shp(r)
+    defl = lo_deflation_factor(r) if evaluated else 1.0
+    lo_adj = naive * defl
+    psr = probabilistic_sharpe_ratio(r, 0.0) if evaluated else float("nan")
+    mintrl = min_track_record_length(r, 0.0, 0.95) if evaluated else float("inf")
+    inflated = bool(evaluated and defl < LO_DEFLATION_FLOOR and lo_adj < LO_SHARPE_FLOOR)
+
+    def _num(x):  # JSON-safe: no nan/inf in the gate report
+        return None if (x is None or x != x or x in (float("inf"), float("-inf"))) else round(float(x), 4)
+
+    return CheckResult(
+        name="sharpe_inference", failure_mode=3, evaluated=evaluated,
+        passed=(None if not evaluated else (not inflated)),
+        reason=(f"SHARPE-SERIAL-INFLATED: Lo deflation {round(defl, 3)} < {LO_DEFLATION_FLOOR} and "
+                f"Lo-adjusted Sharpe {round(lo_adj, 3)} < {LO_SHARPE_FLOOR} -> Sharpe inflated by serial "
+                f"correlation (stale/smoothed marks), demoted" if inflated else None),
+        active_from=SHARPE_INFERENCE_DEMOTES_FROM,
+        metrics={"naive_sharpe": _num(naive), "lo_deflation_factor": _num(defl),
+                 "lo_adjusted_sharpe": _num(lo_adj), "psr_vs_zero": _num(psr),
+                 "min_track_record_len": _num(mintrl), "n_obs": n,
+                 "track_record_adequate": bool(evaluated and mintrl != float("inf") and n >= mintrl),
+                 "serial_inflated": inflated})
+
+
+# Registry ORDER == legacy demotion order (+ macro, sharpe-inference last; both date-gated inert today).
 DEMOTION_CHECKS = [_gc_beta_confound, _gc_regime_fragile, _gc_regime_unstamped,
-                   _gc_deployability, _gc_macro_confound]
+                   _gc_deployability, _gc_macro_confound, _gc_sharpe_inference]
 
 
 def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
