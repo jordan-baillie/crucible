@@ -16,6 +16,7 @@ import pandas as pd
 # rails (per-project FDR/holdout state lives in the research-wiki so it's SHARED across agents)
 from crucible_paths import WIKI, REGISTRY
 from sdk.locks import FileLock
+from sdk.gates import CheckResult, GateContext, run_checks, apply_demotions, gates_report
 os.environ.setdefault("RESEARCH_INTEGRITY_DIR", str(REGISTRY))
 import research_integrity as ri
 
@@ -582,6 +583,98 @@ def _deployability_filter(spec, panel, search_trades, candidate: bool) -> dict:
     return out
 
 
+# ---- Demotion checks (uniform Check contract; design-gate-system-unification.md) --------------
+# Each check OWNS its compute and returns a CheckResult; run_checks() executes them OUTSIDE the FDR
+# lock, apply_demotions() applies the verdict INSIDE it. Registry ORDER is the legacy demotion order
+# (beta -> regime-fragile -> regime-unstamped -> deploy), so the first-failing-reason behaviour is
+# byte-identical; macro is appended date-gated (inert until MACRO_DEMOTES_FROM). Adding a gate = write
+# one check fn + register it below. No rails surgery; no per-check copy-paste of the if/append idiom.
+
+def _gc_beta_confound(ctx: GateContext) -> CheckResult:
+    d = _beta_decomp(ctx.search, ctx.price_matrix) or {}
+    evaluated = bool(d)
+    confound = bool(d.get("beta_to_universe", 0) > BETA_HI
+                    and d.get("selection_alpha_sharpe") is not None
+                    and d["selection_alpha_sharpe"] < SEL_FLOOR)
+    return CheckResult(
+        name="beta_confound", failure_mode=5, evaluated=evaluated,
+        passed=(None if not evaluated else (not confound)),
+        reason=(f"BETA-CONFOUND: beta_to_universe {d['beta_to_universe']} + selection-alpha Sharpe "
+                f"{d['selection_alpha_sharpe']} < {SEL_FLOOR} -> edge is long-only universe beta, demoted"
+                if confound else None),
+        metrics={"decomp": d, "beta_confound": confound,
+                 "beta_to_universe": d.get("beta_to_universe"),
+                 "selection_alpha_sharpe": d.get("selection_alpha_sharpe")})
+
+
+def _gc_regime_fragile(ctx: GateContext) -> CheckResult:
+    rs = _regime_split(ctx.search, ctx.price_matrix)
+    evaluated = bool(rs.get("evaluated"))
+    return CheckResult(
+        name="regime_fragile", failure_mode=4, evaluated=evaluated,
+        passed=(None if not evaluated else (rs["pass"] is not False)),
+        reason=(f"REGIME-FRAGILE: sharpe_calm={rs.get('sharpe_calm')} "
+                f"sharpe_turbulent={rs.get('sharpe_turbulent')} — edge lives in one volatility regime only"
+                if (evaluated and rs.get("pass") is False) else None),
+        metrics={"regime_split": rs})
+
+
+def _gc_regime_unstamped(ctx: GateContext) -> CheckResult:
+    rc = _regime_coverage(ctx.search_trades)
+    ok = bool(rc.get("ok"))
+    return CheckResult(
+        name="regime_unstamped", failure_mode=4, evaluated=True,
+        passed=ok,
+        reason=(f"REGIME-UNSTAMPED: {rc.get('note')} — ledger regime gates were vacuous, demoted"
+                if not ok else None),
+        active_from=REGIME_COVERAGE_DEMOTES_FROM,
+        metrics={"regime_coverage": rc})
+
+
+def _gc_deployability(ctx: GateContext) -> CheckResult:
+    df = _deployability_filter(ctx.spec, ctx.panel, ctx.search_trades, ctx.deploy_candidate)
+    deployable = bool(df.get("deployable"))
+    return CheckResult(
+        name="deployability", failure_mode=5, evaluated=True,
+        passed=deployable,
+        reason=(df.get("reasons") if not deployable else None),   # a LIST of reasons
+        metrics={"deploy_filter": df})
+
+
+def _gc_macro_confound(ctx: GateContext) -> CheckResult:
+    # ANNOTATE-ONLY until MACRO_DEMOTES_FROM (date-gated via active_from). Network-guarded: any failure
+    # -> not_evaluated, never a crash. Explicit `is not None` p-check (NOT `p or ...`; the calibration
+    # footgun — a 0.0 p-value is the strongest signal, yet falsy).
+    try:
+        from sdk.adapters import macro_factor_returns
+        from sdk import cost_model as _cm
+        start = (str(pd.Timestamp(ctx.search.index.min()).date()) if len(ctx.search) else "2003-01-01")
+        mx = macro_factor_returns(start=start,
+                                  include_crypto=_cm.is_crypto(getattr(ctx.spec, "markets", None)))
+        mn = _macro_decomp(ctx.search, mx)
+    except Exception as e:
+        mn = {"evaluated": False, "note": f"macro block error: {e}"}
+    evaluated = bool(mn.get("evaluated"))
+    confound = bool(evaluated and mn["macro_r2"] > MACRO_R2_HI
+                    and mn["macro_residual_sharpe"] < MACRO_SEL_FLOOR
+                    and mn.get("macro_block_pvalue") is not None
+                    and mn["macro_block_pvalue"] < 0.05)
+    return CheckResult(
+        name="macro_confound", failure_mode=5, evaluated=evaluated,
+        passed=(None if not evaluated else (not confound)),
+        reason=(f"MACRO-CONFOUND: macro_r2 {mn.get('macro_r2')} > {MACRO_R2_HI} AND macro-neutral Sharpe "
+                f"{mn.get('macro_residual_sharpe')} < {MACRO_SEL_FLOOR} (p={mn.get('macro_block_pvalue')}) "
+                f"-> disguised macro bet, demoted" if confound else None),
+        active_from=MACRO_DEMOTES_FROM,
+        metrics={"macro_neutral": mn, "macro_r2": mn.get("macro_r2"),
+                 "macro_residual_sharpe": mn.get("macro_residual_sharpe"), "macro_confound": confound})
+
+
+# Registry ORDER == legacy demotion order (+ macro last, date-gated inert today).
+DEMOTION_CHECKS = [_gc_beta_confound, _gc_regime_fragile, _gc_regime_unstamped,
+                   _gc_deployability, _gc_macro_confound]
+
+
 def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     """Run one pre-registered hypothesis through ALL rails. Returns the verdict dict."""
     panel = spec.load_data()
@@ -709,30 +802,21 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     # long-only BETA-CONFOUND check: decompose search returns into universe-beta + selection-alpha.
     # MCPT's lesson made a cheap stage-1 gate: an apparent edge that is really long-only universe beta
     # (high beta, weak selection-alpha) must NOT pass -- it'd just be holding the universe (cf. value×mom 0.994).
-    decomp = _beta_decomp(search, _price_matrix(panel)) or {}
-    beta_confound = bool(decomp.get("beta_to_universe", 0) > BETA_HI
-                         and decomp.get("selection_alpha_sharpe") is not None
-                         and decomp["selection_alpha_sharpe"] < SEL_FLOOR)
-    # MACRO-NEUTRALIZATION annotation (pre-reg FROZEN 2026-06-15; ANNOTATE-ONLY -> records metrics,
-    # demotes nothing). Generalizes beta-confound to the macro block so the macro_r2 / residual-Sharpe
-    # distribution can be observed before demotion is calibrated + enabled. Network-guarded: any
-    # failure -> not_evaluated, never a crash and never a verdict change.
-    try:
-        from sdk.adapters import macro_factor_returns
-        from sdk import cost_model as _cm_macro
-        _macro_start = (str(pd.Timestamp(search.index.min()).date()) if len(search) else "2003-01-01")
-        _macro_mx = macro_factor_returns(start=_macro_start,
-                                         include_crypto=_cm_macro.is_crypto(getattr(spec, "markets", None)))
-        macro_neutral = _macro_decomp(search, _macro_mx)
-    except Exception as e:
-        macro_neutral = {"evaluated": False, "note": f"macro block error: {e}"}
-    # Stage 2a Part A (pre-registered, frozen): the edge must be non-negative in BOTH vol halves.
-    regime_split = _regime_split(search, _price_matrix(panel))
-    # Stage 2a Part B: were the ledger regime gates even evaluable?
-    regime_cov = _regime_coverage(search_trades)
-    # Cost-aware deployability (pre-reg FROZEN 2026-06-15): borrow-feasibility (cheap) always;
-    # net-of-liquidity-cost holdout re-price only for candidates that already cleared holdout+deploy.
-    deploy_filter = _deployability_filter(spec, panel, search_trades, bool(h_pass and dep["passed"]))
+    # --- demotion checks (uniform Check contract; design-gate-system-unification.md) ---
+    #     Heavy compute runs HERE, OUTSIDE the FDR lock (run_checks); the cheap demotion DECISION is
+    #     applied INSIDE the lock (apply_demotions). Legacy locals are derived from the check metrics so
+    #     the verdict stays byte-identical; demotion is single-sourced (no per-check if/append copy-paste).
+    _gctx = GateContext(spec=spec, panel=panel, price_matrix=_price_matrix(panel),
+                        search=search, search_trades=search_trades,
+                        holdout_pass=h_pass, deploy_candidate=bool(h_pass and dep["passed"]))
+    check_results = run_checks(DEMOTION_CHECKS, _gctx)
+    _R = {r.name: r for r in check_results}
+    decomp = _R["beta_confound"].metrics["decomp"]
+    beta_confound = _R["beta_confound"].metrics["beta_confound"]
+    macro_neutral = _R["macro_confound"].metrics["macro_neutral"]
+    regime_split = _R["regime_fragile"].metrics["regime_split"]
+    regime_cov = _R["regime_unstamped"].metrics["regime_coverage"]
+    deploy_filter = _R["deployability"].metrics["deploy_filter"]
 
     with FileLock("fdr-registry", ttl=120):
         n_fam = ri.distinct_families(extra=spec.family)
@@ -740,27 +824,9 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         tiers = ri.evaluate_tiers(b, promote_dsr=bar)
         tier = str(tiers.get("tier"))
         stage1_pass = tier.upper() == "PROMOTE" and h_pass and dep["passed"]
-        if stage1_pass and beta_confound:   # demote: edge is long-only universe beta, not the signal
-            stage1_pass = False
-            h_reasons = list(h_reasons) + [
-                f"BETA-CONFOUND: beta_to_universe {decomp['beta_to_universe']} + selection-alpha Sharpe "
-                f"{decomp['selection_alpha_sharpe']} < {SEL_FLOOR} -> edge is long-only universe beta, demoted"]
-        # Stage 2a Part A demotion (same mechanics as beta-confound; rule frozen in the pre-reg)
-        if stage1_pass and regime_split["evaluated"] and regime_split["pass"] is False:
-            stage1_pass = False
-            h_reasons = list(h_reasons) + [
-                f"REGIME-FRAGILE: sharpe_calm={regime_split['sharpe_calm']} "
-                f"sharpe_turbulent={regime_split['sharpe_turbulent']} — edge lives in one volatility regime only"]
-        # Stage 2a Part B demotion (phase-in: annotate-only before REGIME_COVERAGE_DEMOTES_FROM)
-        if stage1_pass and not regime_cov["ok"] and \
-                pd.Timestamp.now().strftime("%Y-%m-%d") >= REGIME_COVERAGE_DEMOTES_FROM:
-            stage1_pass = False
-            h_reasons = list(h_reasons) + [
-                f"REGIME-UNSTAMPED: {regime_cov['note']} — ledger regime gates were vacuous, demoted"]
-        # Cost-aware deployability demotion (same mechanics; makes an un-deployable PASS unrepresentable)
-        if stage1_pass and not deploy_filter["deployable"]:
-            stage1_pass = False
-            h_reasons = list(h_reasons) + deploy_filter["reasons"]
+        # SINGLE-SOURCED demotion: active hard-failing checks revoke the PASS in registry order
+        # (beta -> regime-fragile -> regime-unstamped -> deploy -> macro[date-gated]); first reason wins.
+        stage1_pass, h_reasons = apply_demotions(stage1_pass, h_reasons, check_results)
         registry_recorded = True
         try:
             ri.registry.append_run({"strategy": spec.id, "family": spec.family, "tier": tier,
@@ -826,6 +892,7 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "macro_residual_sharpe": macro_neutral.get("macro_residual_sharpe"),
         "regime_split": regime_split, "regime_coverage": regime_cov,
         "deployability": deploy_filter,
+        "gates": gates_report(check_results),  # single-sourced uniform gate report (consumers migrate here)
         "stage1_pass": stage1_pass, "confirmed": gen_confirmed, "scope": getattr(spec, "scope", "broad"),
         "mcpt": mcpt_res, "mcpt_pass": mcpt_pass,
         "needs_confirmation": (None if not stage1_pass or passed_all else
