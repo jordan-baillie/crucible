@@ -1,0 +1,279 @@
+{
+  "n_modules": 105,
+  "evaluated": 42,
+  "not_evaluated": 44,
+  "errors": 19,
+  "implied_ic_dist": {
+    "n": 42,
+    "min": 0.001,
+    "p25": 0.045,
+    "median": 0.066,
+    "p75": 0.1006,
+    "p90": 0.1189,
+    "p95": 0.2008,
+    "p99": 0.3125,
+    "max": 0.3417
+  },
+  "effective_breadth_dist": {
+    "n": 42,
+    "min": 1.83,
+    "p25": 51.1325,
+    "median": 169.75,
+    "p75": 264.2025,
+    "p90": 352.885,
+    "p95": 359.731,
+    "p99": 369.9705,
+    "max": 375.28
+  },
+  "n_names_dist": {
+    "n": 42,
+    "min": 3.0,
+    "p25": 194.25,
+    "median": 466.0,
+    "p75": 690.5,
+    "p90": 762.7,
+    "p95": 829.65,
+    "p99": 973.61,
+    "max": 1047.0
+  },
+  "avg_pairwise_corr_dist": {
+    "n": 42,
+    "min": 0.114,
+    "p25": 0.1743,
+    "median": 0.2165,
+    "p75": 0.2575,
+    "p90": 0.3412,
+    "p95": 0.4915,
+    "p99": 0.812,
+    "max": 0.992
+  },
+  "IMPLIED_IC_MAX": 0.2,
+  "would_demote_count": 3,
+  "would_demote_ids": [
+    "amihud_illiq_tranched_v3",
+    "amihud_illiq_topN_short_v3",
+    "vvix_vix_divergence_gate"
+  ],
+  "top_implied_ic": [
+    {
+      "id": "vvix_vix_divergence_gate",
+      "family": "volatility_conditioning",
+      "is_crypto": false,
+      "implied_ic": 0.3417,
+      "IR": 0.462,
+      "eff_breadth": 1.83,
+      "n_names": 3,
+      "rho": 0.992,
+      "would_demote": true
+    },
+    {
+      "id": "amihud_illiq_tranched_v3",
+      "family": "illiquidity_premium",
+      "is_crypto": false,
+      "implied_ic": 0.2704,
+      "IR": 1.927,
+      "eff_breadth": 50.79,
+      "n_names": 467,
+      "rho": 0.202,
+      "would_demote": true
+    },
+    {
+      "id": "amihud_illiq_topN_short_v3",
+      "family": "amihud_illiquidity",
+      "is_crypto": false,
+      "implied_ic": 0.2048,
+      "IR": 1.64,
+      "eff_breadth": 64.11,
+      "n_names": 766,
+      "rho": 0.187,
+      "would_demote": true
+    },
+    {
+      "id": "amihud_illiq_wideband_untranched_v1",
+      "family": "illiquidity_premium",
+      "is_crypto": false,
+      "implied_ic": 0.1243,
+      "IR": 0.825,
+      "eff_breadth": 44.06,
+      "n_names": 355,
+      "rho": 0.231,
+      "would_demote": false
+    },
+    {
+      "id": "illiq_x_trend_throttled_v1",
+      "family": "illiquidity_trend_combo",
+      "is_crypto": false,
+      "implied_ic": 0.1201,
+      "IR": 2.256,
+      "eff_breadth": 352.89,
+      "n_names": 702,
+      "rho": 0.146,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_illiq_topN_borrowable_short_v3",
+      "family": "amihud_illiquidity",
+      "is_crypto": false,
+      "implied_ic": 0.1082,
+      "IR": 0.802,
+      "eff_breadth": 54.98,
+      "n_names": 733,
+      "rho": 0.215,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_illiq_idxhedge_v2",
+      "family": "illiquidity",
+      "is_crypto": false,
+      "implied_ic": 0.1075,
+      "IR": 0.805,
+      "eff_breadth": 56.11,
+      "n_names": 321,
+      "rho": 0.211,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_illiq_etf_hedged_v2",
+      "family": "liquidity_premium",
+      "is_crypto": false,
+      "implied_ic": 0.1034,
+      "IR": 0.804,
+      "eff_breadth": 60.35,
+      "n_names": 652,
+      "rho": 0.198,
+      "would_demote": false
+    },
+    {
+      "id": "midcap_value_momentum_composite",
+      "family": "cross_sectional_equity_factor",
+      "is_crypto": false,
+      "implied_ic": 0.1033,
+      "IR": 0.545,
+      "eff_breadth": 27.79,
+      "n_names": 566,
+      "rho": 0.288,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_tranche_topn_short_v2",
+      "family": "amihud_illiquidity",
+      "is_crypto": false,
+      "implied_ic": 0.102,
+      "IR": 0.692,
+      "eff_breadth": 45.98,
+      "n_names": 465,
+      "rho": 0.201,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_x_etf_trend_deployable_v1",
+      "family": "two_premium_combination",
+      "is_crypto": false,
+      "implied_ic": 0.1011,
+      "IR": 1.925,
+      "eff_breadth": 362.33,
+      "n_names": 170,
+      "rho": 0.114,
+      "would_demote": false
+    },
+    {
+      "id": "dividend_month_premium_mid_v1",
+      "family": "event_flow_div_month",
+      "is_crypto": false,
+      "implied_ic": 0.099,
+      "IR": 0.583,
+      "eff_breadth": 34.72,
+      "n_names": 161,
+      "rho": 0.344,
+      "would_demote": false
+    },
+    {
+      "id": "defensive_bab",
+      "family": "defensive",
+      "is_crypto": false,
+      "implied_ic": 0.0853,
+      "IR": 1.243,
+      "eff_breadth": 212.44,
+      "n_names": 766,
+      "rho": 0.239,
+      "would_demote": false
+    },
+    {
+      "id": "valmom_large_trend_overlay",
+      "family": "value_momentum",
+      "is_crypto": false,
+      "implied_ic": 0.0839,
+      "IR": 1.122,
+      "eff_breadth": 178.68,
+      "n_names": 480,
+      "rho": 0.291,
+      "would_demote": false
+    },
+    {
+      "id": "div_month_premium_mid",
+      "family": "event_flow_pressure",
+      "is_crypto": false,
+      "implied_ic": 0.0829,
+      "IR": 0.509,
+      "eff_breadth": 37.7,
+      "n_names": 193,
+      "rho": 0.316,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_illiq_compressed_short_v3",
+      "family": "amihud_illiquidity",
+      "is_crypto": false,
+      "implied_ic": 0.0817,
+      "IR": 0.59,
+      "eff_breadth": 52.16,
+      "n_names": 435,
+      "rho": 0.229,
+      "would_demote": false
+    },
+    {
+      "id": "crypto_carry_x_trend_majors_v1",
+      "family": "carry_trend_combo",
+      "is_crypto": true,
+      "implied_ic": 0.0747,
+      "IR": 0.665,
+      "eff_breadth": 79.32,
+      "n_names": 10,
+      "rho": 0.553,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_illiquidity_premium",
+      "family": "illiquidity",
+      "is_crypto": false,
+      "implied_ic": 0.0713,
+      "IR": 1.347,
+      "eff_breadth": 357.09,
+      "n_names": 697,
+      "rho": 0.145,
+      "would_demote": false
+    },
+    {
+      "id": "amihud_illiquidity_smallcap",
+      "family": "liquidity",
+      "is_crypto": false,
+      "implied_ic": 0.0701,
+      "IR": 1.33,
+      "eff_breadth": 359.87,
+      "n_names": 717,
+      "rho": 0.144,
+      "would_demote": false
+    },
+    {
+      "id": "val_mom_trend_smallcap",
+      "family": "value_momentum",
+      "is_crypto": false,
+      "implied_ic": 0.0697,
+      "IR": 1.144,
+      "eff_breadth": 269.35,
+      "n_names": 498,
+      "rho": 0.162,
+      "would_demote": false
+    }
+  ]
+}

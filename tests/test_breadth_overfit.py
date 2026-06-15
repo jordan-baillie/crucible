@@ -52,13 +52,24 @@ def _ctx(n_names, rho, n_days=1200, rebal="ME", drift=0.0006, seed=0):
                        search_trades=trades, holdout_pass=True, deploy_candidate=True)
 
 
-def test_breadth_check_computes_and_is_inert_today():
+def test_breadth_check_active_and_spares_broad_book():
+    """Gate is ACTIVE (active_from amended to 2026-06-15). A broad, diversified book (many names,
+    low correlation) has a plausible implied IC -> NOT demoted."""
     from sdk.harness import _gc_breadth_overfit
-    res = _gc_breadth_overfit(_ctx(n_names=40, rho=0.15, rebal="ME", seed=1))
+    res = _gc_breadth_overfit(_ctx(n_names=100, rho=0.03, rebal="W", drift=0.0003, seed=1))
     assert res.name == "breadth_overfit" and res.failure_mode == 1
-    if res.evaluated:
-        assert "implied_ic" in res.metrics and res.metrics["n_names"] >= 2
-    assert res.active is False and res.demotes is False    # date-gated 2026-06-29 -> inert TODAY
+    assert res.active is True                              # LIVE now
+    assert res.evaluated is True
+    assert res.metrics["implied_ic"] < 0.20 and res.passed is True and res.demotes is False
+
+
+def test_breadth_check_demotes_narrow_high_ir_book():
+    """Concentrated, highly-correlated, high-IR book (~few effective bets) -> implausible implied IC
+    -> DEMOTE (the live overfit flag). This is the conservative-by-design false-positive mode too."""
+    from sdk.harness import _gc_breadth_overfit
+    res = _gc_breadth_overfit(_ctx(n_names=3, rho=0.95, rebal="ME", drift=0.0009, seed=5))
+    assert res.evaluated is True and res.metrics["implied_ic"] > 0.20
+    assert res.passed is False and res.active is True and res.demotes is True
 
 
 def test_breadth_check_not_evaluated_on_losing_or_thin():

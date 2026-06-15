@@ -50,7 +50,9 @@ SHARPE_INFERENCE_DEMOTES_FROM = "2026-06-15"  # ACTIVE: calibration done (84 boo
 #     DSR/PBO don't test). Break-even = rough diagnostic (cost survival already gated by deployability);
 #     capacity EXCLUDED (no-AUM posture). Annotate-only until BREADTH_DEMOTES_FROM + calibration.
 IMPLIED_IC_MAX = 0.20        # frozen: implied IC above this = IR unachievable given breadth => overfit
-BREADTH_DEMOTES_FROM = "2026-06-29"  # frozen phase-in (demotion needs calibration too)
+BREADTH_DEMOTES_FROM = "2026-06-15"  # ACTIVE: calibration done (42 books, clean gap [0.125,0.205], 3
+                                     # defensible demotes, threshold confirmed) -> amended 06-29->06-15
+                                     # (stricter; pre-reg §6). Gate now demotes implausible-IR-vs-breadth live.
 
 
 @dataclass
