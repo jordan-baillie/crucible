@@ -7,6 +7,7 @@ import tempfile
 
 from crucible_paths import WIKI  # central config
 from sdk.locks import FileLock
+from sdk.gates import gate_metric
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -137,7 +138,7 @@ generated_by: crucible-agent
 - search Sharpe {verdict['search_sharpe']} -> holdout Sharpe {verdict['holdout_sharpe']} | **holdout_gate PASS={verdict['holdout_pass']}** {verdict['holdout_reasons']}
 - deployment passed={verdict['deployment_passed']} peak={verdict['deploy_peak']} sectors={verdict['deploy_sectors']} {verdict['deploy_reasons']}
 - full Sharpe {verdict['full_sharpe']} | maxDD {verdict['full_maxdd']} | trades {verdict['n_trades']}
-- regime burner (pre-reg 2026-06-12): {_fmt_regime(verdict.get('regime_split'), verdict.get('regime_coverage'))}
+- regime burner (pre-reg 2026-06-12): {_fmt_regime(gate_metric(verdict, 'regime_fragile', 'regime_split', flat='regime_split'), gate_metric(verdict, 'regime_unstamped', 'regime_coverage', flat='regime_coverage'))}
 - stage-1 pass: {verdict.get('stage1_pass')} | scope: {verdict.get('scope')}
 - stage-2 MCPT: pass={verdict.get('mcpt_pass')} {verdict.get('mcpt') or ''}
 - stage-2 generalization: {verdict.get('generalization')} — {verdict.get('generalization_note') or 'n/a'}

@@ -810,13 +810,9 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
                         search=search, search_trades=search_trades,
                         holdout_pass=h_pass, deploy_candidate=bool(h_pass and dep["passed"]))
     check_results = run_checks(DEMOTION_CHECKS, _gctx)
-    _R = {r.name: r for r in check_results}
-    decomp = _R["beta_confound"].metrics["decomp"]
-    beta_confound = _R["beta_confound"].metrics["beta_confound"]
-    macro_neutral = _R["macro_confound"].metrics["macro_neutral"]
-    regime_split = _R["regime_fragile"].metrics["regime_split"]
-    regime_cov = _R["regime_unstamped"].metrics["regime_coverage"]
-    deploy_filter = _R["deployability"].metrics["deploy_filter"]
+    # MCPT uses the universe-beta as a benchmark-relative flag; read it from the beta check's metrics.
+    # (All other gate verdicts are single-sourced in verdict["gates"] below — no flat-key locals.)
+    decomp = next(r.metrics["decomp"] for r in check_results if r.name == "beta_confound")
 
     with FileLock("fdr-registry", ttl=120):
         n_fam = ri.distinct_families(extra=spec.family)
@@ -885,14 +881,12 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
         "holdout_pass": h_pass, "holdout_reasons": h_reasons,
         "full_sharpe": round(_sharpe(full_ret), 3), "full_maxdd": round(_maxdd(full_ret), 3),
         "n_trades": len(trades),
-        "beta_to_universe": decomp.get("beta_to_universe"),
-        "selection_alpha_sharpe": decomp.get("selection_alpha_sharpe"), "beta_confound": beta_confound,
-        "macro_neutral": macro_neutral,  # ANNOTATE-ONLY: full sub-dict (evaluated flag + metrics/note)
-        "macro_r2": macro_neutral.get("macro_r2"),
-        "macro_residual_sharpe": macro_neutral.get("macro_residual_sharpe"),
-        "regime_split": regime_split, "regime_coverage": regime_cov,
-        "deployability": deploy_filter,
-        "gates": gates_report(check_results),  # single-sourced uniform gate report (consumers migrate here)
+        # Gate verdicts are SINGLE-SOURCED here (Phase C): the demotion-overlay results live ONLY in
+        # verdict["gates"][<check>] (beta_confound / regime_fragile / regime_unstamped / deployability /
+        # macro_confound), each carrying its metrics. The legacy flat keys (beta_to_universe,
+        # selection_alpha_sharpe, beta_confound, macro_*, regime_split, regime_coverage, deployability)
+        # were dropped; consumers read via sdk.gates.gate_metric (gates-first, flat-fallback for old records).
+        "gates": gates_report(check_results),
         "stage1_pass": stage1_pass, "confirmed": gen_confirmed, "scope": getattr(spec, "scope", "broad"),
         "mcpt": mcpt_res, "mcpt_pass": mcpt_pass,
         "needs_confirmation": (None if not stage1_pass or passed_all else

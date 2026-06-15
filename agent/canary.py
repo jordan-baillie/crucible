@@ -141,7 +141,8 @@ def canary_beta_clone():
         return W
 
     v = _run(_spec("canary-beta-clone", "canary_beta", panel, w))
-    fired = bool(v.get("beta_confound"))
+    from sdk.gates import gate_metric
+    fired = bool(gate_metric(v, "beta_confound", "beta_confound"))
     return _judge("beta-confound", v, fired)
 
 
@@ -258,11 +259,13 @@ def _run(spec) -> dict:
 
 
 def _judge(gate: str, v: dict, fired: bool, note: str = "") -> dict:
+    from sdk.gates import gate_metric
     breached = bool(v.get("PASSED_ALL_GATES"))    # HARD invariant
     return {"id": v.get("id"), "gate": gate, "breached": breached, "fired": fired,
             "tier": v.get("tier"), "note": note,
-            "detail": {k: v.get(k) for k in ("dsr", "pbo", "search_sharpe", "holdout_sharpe",
-                                             "beta_confound", "mcpt_pass", "holdout_burned")}}
+            "detail": {**{k: v.get(k) for k in ("dsr", "pbo", "search_sharpe", "holdout_sharpe",
+                                                "mcpt_pass", "holdout_burned")},
+                       "beta_confound": gate_metric(v, "beta_confound", "beta_confound")}}
 
 
 BATTERY = [canary_screen, canary_lookahead, canary_beta_clone,

@@ -69,14 +69,20 @@ def run():
     out = {}
     for name, sig, grid in cases:
         v = H.run_experiment(mk(sig, f"t-{name}", grid), write_wiki=False, alert=False)
+        from sdk.gates import gate_metric
         out[name] = {k: v.get(k) for k in (
             "tier", "stage1_pass", "PASSED_ALL_GATES", "holdout_pass", "holdout_reasons",
-            "beta_confound", "beta_to_universe", "selection_alpha_sharpe",
-            "macro_r2", "macro_residual_sharpe", "search_sharpe", "holdout_sharpe",
-            "dsr", "median_cpcv", "pbo")}
-        out[name]["regime_pass"] = (v.get("regime_split") or {}).get("pass")
-        out[name]["regime_cov_ok"] = (v.get("regime_coverage") or {}).get("ok")
-        out[name]["deployable"] = (v.get("deployability") or {}).get("deployable")
+            "search_sharpe", "holdout_sharpe", "dsr", "median_cpcv", "pbo")}
+        # Gate VALUES read via the unified accessor (gates-first, flat-fallback) so Phase C — which
+        # MOVES these from flat keys into verdict['gates'] — must show ZERO diff (data moved, not changed).
+        out[name]["beta_confound"] = gate_metric(v, "beta_confound", "beta_confound")
+        out[name]["beta_to_universe"] = gate_metric(v, "beta_confound", "beta_to_universe")
+        out[name]["selection_alpha_sharpe"] = gate_metric(v, "beta_confound", "selection_alpha_sharpe")
+        out[name]["macro_r2"] = gate_metric(v, "macro_confound", "macro_r2")
+        out[name]["macro_residual_sharpe"] = gate_metric(v, "macro_confound", "macro_residual_sharpe")
+        out[name]["regime_pass"] = (gate_metric(v, "regime_fragile", "regime_split", flat="regime_split") or {}).get("pass")
+        out[name]["regime_cov_ok"] = (gate_metric(v, "regime_unstamped", "regime_coverage", flat="regime_coverage") or {}).get("ok")
+        out[name]["deployable"] = (gate_metric(v, "deployability", "deploy_filter", flat="deployability") or {}).get("deployable")
     print(json.dumps(out, indent=2, default=str, sort_keys=True))
 
 

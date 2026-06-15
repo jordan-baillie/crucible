@@ -11,6 +11,7 @@ Legacy items (no 'cell' key) are re-binned on first write/read; collisions keep 
 import json
 
 from crucible_paths import ELITE as POOL, WIKI
+from sdk.gates import gate_metric
 
 CLOSED_FAMILIES = WIKI / "decisions" / "closed-families.txt"
 MAX_CELLS = 24  # global safety cap (grid is the real bound; in practice far fewer cells are occupied)
@@ -74,7 +75,7 @@ def _closed_families() -> set:
 def _fitness(v: dict) -> float:
     if not v:
         return 0.0
-    if v.get("beta_confound"):
+    if gate_metric(v, "beta_confound", "beta_confound"):
         return 0.0   # long-only-beta confound -> never seed the evolutionary exploit loop with it
     if v.get("dsr") is not None:
         return float(v["dsr"])                 # the deflated, multiple-testing-aware Sharpe = the natural fitness

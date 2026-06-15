@@ -88,3 +88,13 @@ def gates_report(results: list[CheckResult]) -> dict:
     """One uniform gate block for the verdict (single source of truth; downstream renders from this)."""
     return {r.name: {"failure_mode": r.failure_mode, "evaluated": r.evaluated, "passed": r.passed,
                      "active": r.active, "reason": r.reason, **r.metrics} for r in results}
+
+
+def gate_metric(verdict: dict, name: str, key: str, default=None, flat: str | None = None):
+    """Read a gate value from the single-sourced verdict['gates'][name][key], with BACK-COMPAT
+    fallback to the legacy flat verdict key (old records pre-date verdict['gates']). `flat` defaults
+    to `key`. This is how all consumers read gate verdicts post-unification."""
+    g = (verdict.get("gates") or {}).get(name)
+    if isinstance(g, dict) and key in g:
+        return g[key]
+    return verdict.get(flat or key, default)
