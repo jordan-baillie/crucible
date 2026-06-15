@@ -45,6 +45,13 @@ SHARPE_INFERENCE_DEMOTES_FROM = "2026-06-15"  # ACTIVE: calibration done (84 boo
                                               # gap, carry book spared) -> activation amended 06-29->06-15
                                               # (stricter direction; pre-reg §6). Gate now demotes live.
 
+# --- BREADTH/FUNDAMENTAL-LAW overfit gate (prereg-breadth-overfit-gate.md, FROZEN 2026-06-15). The
+#     genuinely-additive #49 piece: implied IC = IR/sqrt(effective breadth) too high => overfit (an axis
+#     DSR/PBO don't test). Break-even = rough diagnostic (cost survival already gated by deployability);
+#     capacity EXCLUDED (no-AUM posture). Annotate-only until BREADTH_DEMOTES_FROM + calibration.
+IMPLIED_IC_MAX = 0.20        # frozen: implied IC above this = IR unachievable given breadth => overfit
+BREADTH_DEMOTES_FROM = "2026-06-29"  # frozen phase-in (demotion needs calibration too)
+
 
 @dataclass
 class StrategySpec:
@@ -712,9 +719,52 @@ def _gc_sharpe_inference(ctx: GateContext) -> CheckResult:
                  "serial_inflated": inflated})
 
 
-# Registry ORDER == legacy demotion order (+ macro, sharpe-inference last; both date-gated inert today).
+def _gc_breadth_overfit(ctx: GateContext) -> CheckResult:
+    # HARD gate: implied IC = IR/sqrt(effective breadth) too high => IR unachievable given the number of
+    # (correlation-adjusted) independent bets => overfit (DSR/PBO don't test this axis). ANNOTATE-ONLY
+    # until BREADTH_DEMOTES_FROM. Break-even recorded as a ROUGH diagnostic; capacity excluded (no AUM).
+    from sdk.stats import sharpe as _shp, effective_breadth, implied_ic, break_even_cost_bps
+    r = pd.Series(ctx.search).dropna()
+    ir = _shp(r)
+    trades = ctx.search_trades or []
+    held = sorted({str(t.get("ticker")) for t in trades if t.get("ticker")})
+    entry_dates = sorted({str(t.get("entry_date")) for t in trades if t.get("entry_date")})
+    px = ctx.price_matrix
+    cols = [c for c in (held or []) if px is not None and c in getattr(px, "columns", [])]
+    # evaluability: need a positive edge, >=2 held names mappable to prices, and a datable ledger
+    if ir <= 0 or len(cols) < 2 or len(entry_dates) < 2 or len(r) < 60:
+        return CheckResult(name="breadth_overfit", failure_mode=1, evaluated=False, passed=None,
+                           active_from=BREADTH_DEMOTES_FROM,
+                           metrics={"reason": "no positive IR / <2 mappable names / undatable ledger",
+                                    "n_names": len(held), "information_ratio": round(float(ir), 3)})
+    rets = px[cols].pct_change()
+    cm = rets.corr().values
+    iu = np.triu_indices_from(cm, k=1)
+    rho = float(np.nanmean(cm[iu])) if len(iu[0]) else 0.0
+    yrs = max((pd.Timestamp(entry_dates[-1]) - pd.Timestamp(entry_dates[0])).days / 365.25, 1e-6)
+    rebal_per_yr = len(entry_dates) / yrs
+    br_eff_xs = effective_breadth(len(cols), rho)
+    br = max(br_eff_xs * rebal_per_yr, 1e-9)
+    iic = implied_ic(ir, br)
+    gross_ann = float(r.mean()) * 252.0
+    be_bps = break_even_cost_bps(gross_ann, max(rebal_per_yr, 1e-9))   # rough: assumes full turnover/rebalance
+    overfit = bool(iic > IMPLIED_IC_MAX)
+    return CheckResult(
+        name="breadth_overfit", failure_mode=1, evaluated=True, passed=(not overfit),
+        reason=(f"BREADTH-OVERFIT: implied IC {round(iic, 3)} > {IMPLIED_IC_MAX} — IR {round(ir, 2)} "
+                f"unachievable given effective breadth {round(br, 1)} ({len(cols)} names, avg corr "
+                f"{round(rho, 2)}, {round(rebal_per_yr, 1)} rebal/yr) -> overfit" if overfit else None),
+        active_from=BREADTH_DEMOTES_FROM,
+        metrics={"information_ratio": round(float(ir), 3), "n_names": len(cols),
+                 "avg_pairwise_corr": round(rho, 3), "rebalances_per_year": round(rebal_per_yr, 2),
+                 "effective_breadth": round(float(br), 2), "implied_ic": round(float(iic), 4),
+                 "break_even_bps_est": (round(be_bps, 1) if be_bps != float("inf") else None),
+                 "overfit": overfit})
+
+
+# Registry ORDER == legacy demotion order (+ macro, sharpe-inference, breadth last; date-gated inert today).
 DEMOTION_CHECKS = [_gc_beta_confound, _gc_regime_fragile, _gc_regime_unstamped,
-                   _gc_deployability, _gc_macro_confound, _gc_sharpe_inference]
+                   _gc_deployability, _gc_macro_confound, _gc_sharpe_inference, _gc_breadth_overfit]
 
 
 def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:

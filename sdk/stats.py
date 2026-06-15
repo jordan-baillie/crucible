@@ -105,6 +105,30 @@ def min_track_record_length(r, sr_star: float = 0.0, confidence: float = 0.95) -
     return mintrl_from_stats(sr, float(_ss.skew(x)), float(_ss.kurtosis(x, fisher=False)), sr_star, confidence)
 
 
+# --- Economic-realism helpers (prereg-breadth-overfit-gate.md). Verified vs worked examples in
+#     tests/test_breadth_overfit.py. Fundamental Law (Grinold; Clarke-de Silva-Thorley) + break-even.
+def break_even_cost_bps(gross_ann_return: float, annual_turnover_oneway: float) -> float:
+    """Round-trip cost (bps) that zeroes net return = gross_ann_return / one-way annual turnover.
+    e.g. gross 12%, turnover 6x -> 200 bps."""
+    return 1e4 * gross_ann_return / annual_turnover_oneway if annual_turnover_oneway > 0 else float("inf")
+
+
+def effective_breadth(n: int, rho: float) -> float:
+    """Cross-sectional effective independent bets = N/(1+(N-1)*rho) (Clarke-de Silva-Thorley/Buckle).
+    Saturates at 1/rho as N->inf: correlated bets cap breadth. Negative rho clamped to 0 (conservative:
+    never INFLATE breadth -> never wrongly spare an overfit book)."""
+    if n <= 1:
+        return float(max(n, 0))
+    rho = max(0.0, min(float(rho), 0.999))
+    return n / (1.0 + (n - 1) * rho)
+
+
+def implied_ic(ir: float, breadth: float, tc: float = 1.0) -> float:
+    """Fundamental Law inverted: IC = IR / (sqrt(BR)*TC). The IC a backtest's IR REQUIRES given its
+    (effective) breadth. Implausibly high implied IC (real: good ~0.05, exceptional ~0.10-0.15) => overfit."""
+    return ir / (_math.sqrt(breadth) * tc) if (breadth > 0 and tc > 0) else float("inf")
+
+
 def maxdd(r) -> float:
     """Max drawdown of a daily-returns series (negative number, e.g. -0.23)."""
     eq = (1 + pd.Series(r).fillna(0)).cumprod()
