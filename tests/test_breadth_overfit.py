@@ -72,6 +72,49 @@ def test_breadth_check_demotes_narrow_high_ir_book():
     assert res.passed is False and res.active is True and res.demotes is True
 
 
+def test_price_matrix_handles_both_multiindex_orientations():
+    """#61 fix: _price_matrix must read BOTH (field,asset) [px at level 0] and (asset,field) [binance
+    klines: symbol at level 0, close at level 1], and leave flat equity panels untouched."""
+    from sdk.harness import _price_matrix
+    idx = pd.bdate_range(end="2026-06-01", periods=300)
+    flat = pd.DataFrame(100 + np.random.default_rng(0).normal(0, 1, (300, 6)).cumsum(0),
+                        index=idx, columns=[f"A{i}" for i in range(6)])
+    assert _price_matrix(flat) is flat                                  # equity flat panel -> unchanged
+    fa = pd.concat({"close": flat, "volume": flat}, axis=1)             # (field, asset)
+    assert list(_price_matrix(fa).columns) == list(flat.columns)        # close cross-section at level 0
+    af = pd.concat({s: flat[[s]].rename(columns={s: "close"}).assign(volume=1.0) for s in flat.columns}, axis=1)
+    af.columns.names = ["symbol", "field"]                              # (asset, field) = klines layout
+    pm = _price_matrix(af)
+    assert pm is not None and set(pm.columns) == set(flat.columns)      # close cross-section at level 1 -> symbols
+
+
+def test_breadth_evaluates_a_crypto_klines_strategy():
+    """#61: the breadth gate previously returned not_evaluated for ALL crypto (klines MultiIndex panel
+    -> price_matrix None -> <2 mappable). After the _price_matrix fix it must EVALUATE."""
+    from sdk.harness import _price_matrix, _gc_breadth_overfit
+    from sdk.gates import GateContext
+    rng = np.random.default_rng(5)
+    idx = pd.bdate_range(end="2026-06-01", periods=800)
+    syms = [f"C{i}USDT" for i in range(15)]
+    common = rng.normal(0, 0.01, 800)
+    cols = {}
+    for s in syms:
+        px = 100 * np.exp(np.cumsum(0.4 * common + np.sqrt(0.84) * rng.normal(0, 0.01, 800)))
+        for f in ("open", "high", "low", "close", "volume"):
+            cols[(s, f)] = px if f == "close" else px * 1.001
+    panel = pd.DataFrame(cols, index=idx); panel.columns.names = ["symbol", "field"]
+    pm = _price_matrix(panel)
+    search = (pm.pct_change().mean(axis=1).dropna() + 0.0005)
+    search = search[search.index < "2024-01-01"]
+    rebal = panel.resample("ME").last().index
+    trades = [{"ticker": s, "entry_date": str(d.date())}
+              for d in rebal if d < pd.Timestamp("2024-01-01") for s in syms]
+    res = _gc_breadth_overfit(GateContext(spec=None, panel=panel, price_matrix=pm, search=search,
+                                          search_trades=trades, holdout_pass=True, deploy_candidate=True))
+    assert res.evaluated is True and res.metrics["n_names"] >= 10
+    assert res.metrics["effective_breadth"] is not None and res.metrics["implied_ic"] is not None
+
+
 def test_breadth_check_not_evaluated_on_losing_or_thin():
     from sdk.harness import _gc_breadth_overfit
     res = _gc_breadth_overfit(_ctx(n_names=40, rho=0.15, drift=-0.001, seed=2))  # negative drift -> IR<=0

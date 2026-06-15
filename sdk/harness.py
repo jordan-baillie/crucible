@@ -133,13 +133,20 @@ def _sharpe_doc_anchor():
 _maxdd = _maxdd_canon
 
 def _price_matrix(panel):
-    """Best-effort (dates x assets) price matrix for the long-only benchmark; None if not a price panel."""
+    """Best-effort (dates x assets) CLOSE-price matrix for the long-only benchmark + the breadth/regime/
+    beta gates; None if not a price panel. Handles BOTH MultiIndex orientations: (field, asset) with the
+    price-key at level 0, AND (asset, field) — the binance_klines layout: symbol at level 0, 'close' at
+    level 1 — extracting the close cross-section (columns = assets). This is what lets the crypto gates
+    (breadth/regime/beta) read a crypto klines panel instead of seeing it as 'not a price panel'."""
+    keys = ("px", "close", "closeadj", "price", "prices", "adj_close")
     try:
         if isinstance(panel, pd.DataFrame) and isinstance(panel.columns, pd.MultiIndex):
-            lvl0 = set(panel.columns.get_level_values(0))
-            for key in ("px", "close", "closeadj", "price", "prices", "adj_close"):
-                if key in lvl0:
-                    return panel[key]
+            for lvl in (0, 1):                       # (field,asset) -> lvl0 ; (asset,field) klines -> lvl1
+                vals = set(panel.columns.get_level_values(lvl))
+                for key in keys:
+                    if key in vals:
+                        m = panel.xs(key, axis=1, level=lvl)
+                        return m if m.shape[1] >= 2 else None
             return None
         if isinstance(panel, pd.DataFrame) and panel.shape[1] >= 5:
             return panel
