@@ -30,6 +30,38 @@ LADDER_CONSERVATIVE = {10: 8, 9: 11, 8: 16, 7: 22, 6: 32, 5: 45, 4: 64, 3: 88, 2
 # pre-reg §1: a short book with > this share of position-days in non-shortable names FAILS deployability.
 BORROW_INFEASIBLE_CAP = 0.20
 
+# CRYPTO deployability (2026-06-15, operator re-point to crypto): perps short FREELY (no stock
+# borrow), so the equity borrow filter + DV ladder do NOT apply. Realistic round-trip taker cost on
+# the liquid majors is ~18-20bps (Binance 4.5bps/leg x spot+perp, + small slippage on deep books).
+# net_of_cost charges per turnover-unit (one-way per trade), so the per-trade figure is ~10bps.
+# Frozen conservative default; alt-coin illiquidity is handled by biasing the forge to liquid majors.
+CRYPTO_COST_BPS = 10.0  # one-way per-trade (~20bps round-trip); majors
+
+
+def is_crypto(markets) -> bool:
+    """True if a StrategySpec.markets list designates a crypto book (perps short freely; the equity
+    borrow + DV-ladder are the wrong model). Matches 'crypto' case-insensitively in any market tag."""
+    try:
+        return any("crypto" in str(m).lower() for m in (markets or []))
+    except Exception:
+        return False
+
+
+def make_crypto_net_of_cost(cost_bps: float = CRYPTO_COST_BPS, record: dict | None = None):
+    """DROP-IN net_of_cost for crypto: flat per-trade taker cost on turnover, NO borrow zeroing
+    (perps short freely). Ignores the passed cost_bps so a too-cheap strategy assumption is replaced
+    by the realistic taker cost."""
+    def _net(W: pd.DataFrame, rets: pd.DataFrame, cost_bps_ignored: float = 8.0, name: str = "strategy") -> pd.Series:
+        gross = (W * rets).sum(axis=1)
+        cost_day = (W - W.shift(1)).abs().sum(axis=1) * cost_bps * 1e-4
+        net = (gross - cost_day).fillna(0.0)
+        net.name = name
+        if record is not None:
+            record["crypto_cost_bps_per_trade"] = cost_bps
+            record["ann_cost_drag"] = round(float(cost_day.mean() * 365), 4)
+        return net
+    return _net
+
 
 # --------------------------------------------------------------------------- borrow feasibility
 @lru_cache(maxsize=1)

@@ -448,7 +448,8 @@ def _reprice_holdout_sharpe(spec, panel):
     from sdk import signal_kit
     from sdk import cost_model as cm
     mod = _sys.modules.get(getattr(spec.signal, "__module__", ""), None)
-    patched = cm.make_net_of_cost(cm.LADDER_CENTRAL)
+    patched = (cm.make_crypto_net_of_cost() if cm.is_crypto(getattr(spec, "markets", None))
+               else cm.make_net_of_cost(cm.LADDER_CENTRAL))
     saved_mod = getattr(mod, "net_of_cost", None) if mod is not None else None
     saved_kit = signal_kit.net_of_cost
     if mod is not None and saved_mod is not None:
@@ -477,8 +478,25 @@ def _deployability_filter(spec, panel, search_trades, candidate: bool) -> dict:
     for `candidate` runs (already cleared holdout+deployment) so most FAILs pay nothing. A strategy
     that does not use the kit's net_of_cost can't be re-priced for liquidity -> borrow-only (flagged)."""
     from sdk import cost_model as cm
+    crypto = cm.is_crypto(getattr(spec, "markets", None))
+    if crypto:
+        # crypto: perps short freely -> NO stock-borrow filter, NO equity DV-ladder; charge the
+        # realistic flat taker cost (~20bps round-trip) and require the net edge to survive it.
+        out = {"deployable": True, "market": "crypto", "borrow_feasible": True,
+               "short_infeasible_share": 0.0, "repriced_holdout_sharpe": None,
+               "repriced_via_kit": None, "reasons": []}
+        if candidate:
+            rh, via_kit = _reprice_holdout_sharpe(spec, panel)
+            out["repriced_holdout_sharpe"] = (round(rh, 3) if rh is not None else None)
+            out["repriced_via_kit"] = bool(via_kit)
+            if via_kit and (rh is None or rh <= 0):
+                out["reasons"].append(
+                    f"DEPLOYABILITY(crypto): net-of-taker-cost holdout Sharpe "
+                    f"{('n/a' if rh is None else round(rh, 2))} <= 0 — edge does not survive ~20bps round-trip taker cost")
+        out["deployable"] = (len(out["reasons"]) == 0)
+        return out
     bv = cm.borrow_verdict(search_trades)
-    out = {"deployable": True, "borrow_feasible": bv["borrow_feasible"],
+    out = {"deployable": True, "market": "equity", "borrow_feasible": bv["borrow_feasible"],
            "short_infeasible_share": bv["short_infeasible_share"],
            "repriced_holdout_sharpe": None, "repriced_via_kit": None, "reasons": []}
     if not bv["borrow_feasible"]:

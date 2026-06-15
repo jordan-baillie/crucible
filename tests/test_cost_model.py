@@ -110,3 +110,32 @@ def test_corwin_schultz_recovers_a_spread_and_floors_at_zero():
     # zero-range bars -> ~0 (negatives floored), never NaN-explode
     flat = pd.DataFrame({"High": P, "Low": P})
     assert corwin_schultz_bps(flat) == 0.0
+
+
+def test_is_crypto_detection():
+    from sdk import cost_model as cm
+    assert cm.is_crypto(["crypto"]) is True
+    assert cm.is_crypto(["crypto perps"]) is True
+    assert cm.is_crypto(["US_equity"]) is False
+    assert cm.is_crypto([]) is False and cm.is_crypto(None) is False
+
+
+def test_crypto_net_of_cost_no_borrow_flat_cost():
+    import pandas as pd
+    from sdk import cost_model as cm
+    idx = pd.date_range("2020-01-01", periods=4)
+    # a SHORT in a name not in any equity shortable set must KEEP its pnl (crypto shorts freely)
+    W = pd.DataFrame({"BTC": [1.0] * 4, "ETH": [-1.0] * 4}, index=idx)
+    rets = pd.DataFrame({"BTC": [0, 0.0, 0, 0], "ETH": [0, 0.05, 0, 0]}, index=idx)
+    rec = {}
+    net = cm.make_crypto_net_of_cost(record=rec)(W, rets)
+    assert net.iloc[1] < 0  # short ETH lost 5% (kept, not zeroed) -> -0.05; equity gate would've zeroed it
+    assert rec["crypto_cost_bps_per_trade"] == cm.CRYPTO_COST_BPS
+
+
+def test_harness_deployability_routes_crypto():
+    from sdk import harness as H
+    out = H._deployability_filter(type("S", (), {"markets": ["crypto"], "signal": lambda *a: None})(),
+                                  panel=None, search_trades=[{"ticker": "X", "position_value": -1, "hold_days": 9}],
+                                  candidate=False)
+    assert out["market"] == "crypto" and out["borrow_feasible"] is True and out["deployable"] is True

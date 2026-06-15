@@ -1,6 +1,7 @@
 """Generation step: read the shared wiki, propose ONE new untested hypothesis (LLM via the pi CLI).
 Grounded in accumulated knowledge so it never re-tests closed sets or duplicates experiments."""
 import json  # noqa: F401 (used by prompt formatting)
+import os
 from pathlib import Path
 from agent.llm import call as _llm_call, assistant_text as _assistant_text, extract_json  # noqa: F401 (re-export for legacy importers)
 
@@ -11,6 +12,26 @@ SYS = "You are Claude Code, Anthropic's official CLI for Claude."
 def _read(p):
     f = WIKI / p
     return f.read_text(encoding="utf-8") if f.exists() else ""
+
+
+def _focus() -> str:
+    """Operator-directed SEARCH FOCUS (env CRUCIBLE_FOCUS), injected into every arm. Reversible:
+    unset/empty = the general retail-deployable bias; 'crypto' = hunt crypto-deployable space only."""
+    if os.environ.get("CRUCIBLE_FOCUS", "").strip().lower() != "crypto":
+        return ""
+    return (
+        "\n\n=== SEARCH FOCUS: CRYPTO (operator-directed 2026-06-15 — overrides the retail-equity bias) ===\n"
+        "Propose CRYPTO-deployable strategies ONLY this run:\n"
+        "- Venue: spot + PERPETUAL futures on Binance/Bybit; the LIQUID MAJORS (BTC/ETH/SOL/BNB/XRP and other deep perps).\n"
+        "- Crypto deployability: perps short FREELY (NO stock-borrow constraint — a crypto long/short IS deployable),\n"
+        "  ~20bps round-trip taker cost, <=2x leverage, no options. Set market='crypto', retail_tradable_5k='yes'.\n"
+        "- Data reachable: funding_rates() (Binance perp funding, majors, 2019+); yf_panel (spot closes for majors).\n"
+        "- DORMANT — do NOT just re-propose delta-neutral FUNDING CARRY: funding has compressed to ~0/negative in 2025-26\n"
+        "  (see markets/crypto.md); it earns nothing today. Naive crypto MOMENTUM has FAILED before.\n"
+        "- LOOK BEYOND CARRY for something that could pay in the CURRENT regime: cross-sectional crypto factors\n"
+        "  (momentum/reversal/low-vol across coins), funding- or basis-CONDITIONAL timing, vol/term-structure,\n"
+        "  illiquidity in alts, regime gates. PREFER conditional/combination constructions over naive single signals.\n"
+    )
 
 
 def _read_tail(p, max_chars: int):
@@ -35,6 +56,7 @@ def propose() -> dict:
         "\n\n=== EXISTING EXPERIMENTS (do not duplicate; newest last, older omitted) ===\n" + _read_tail("index.md", 12_000) +
         "\n\n=== DATA WE OWN / CAN USE (build ONLY on these; anything else is DATA-GATED -> Gate-0 FAIL) ===\n" + _read("DATA_CATALOG.md") +
         "\n\n=== WEB-SCOUTED CANDIDATES (fresh external ideas — prefer a strong one of these) ===\n" + _read_tail("candidates.md", 8_000)
+        + _focus()
     )
     prompt = f"""{context}
 
@@ -63,7 +85,7 @@ Return ONLY a JSON object:
 
 def _ctx() -> str:
     return ("=== ANTI-PATTERNS (obey) ===\n" + _read("patterns/META-LESSONS.md")[:2000] +
-            "\n\n=== DATA WE OWN ===\n" + _read("DATA_CATALOG.md")[:1500])
+            "\n\n=== DATA WE OWN ===\n" + _read("DATA_CATALOG.md")[:1500] + _focus())
 
 
 # The full proposal JSON contract — IDENTICAL for every arm (explore/refine/orthogonal/crossover);
