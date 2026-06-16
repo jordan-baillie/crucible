@@ -25,6 +25,22 @@ STRATEGIES = ROOT / "strategies"
 LOGS = ROOT / "logs"
 RUN_LOG = ROOT / "agent" / "run_log.jsonl"
 KILLSWITCH = ROOT / "LOOP_DISABLED"
+FORGE_MODE_FILE = ROOT / "FORGE_MODE"
+
+
+def forge_mode() -> str:
+    """Forge cadence mode — the SINGLE source of truth, read by the forge/drip systemd
+    ExecCondition gates so one flag switches cadence with no double FDR-family spend:
+      'batch' (default) nightly 3-smith burst at 03:30 (crucible-forge);
+      'drip'            1 smith every 3h (crucible-drip).
+    Absent/garbage file -> 'batch' (fail safe to the proven baseline). Flip with
+    `echo drip > FORGE_MODE` (and back). Presence-tolerant, never raises.
+    """
+    try:
+        m = FORGE_MODE_FILE.read_text(encoding="utf-8").strip().lower()
+    except Exception:
+        m = ""
+    return m if m in ("batch", "drip") else "batch"
 QUEUE = Path(os.environ.get("CRUCIBLE_QUEUE", os.environ.get("HEPH_QUEUE", WIKI / ".queue" / "queue.jsonl")))  # HEPH_QUEUE legacy compat
 LOCKS = WIKI / ".locks"
 ELITE = WIKI / ".elite" / "pool.jsonl"

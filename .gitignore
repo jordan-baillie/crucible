@@ -6,6 +6,8 @@ scratch/
 
 # Runtime state (regenerated nightly; backed up by crucible-state-backup)
 agent/run_log.jsonl
+# Operator-flippable cadence flag (default 'batch' when absent; see crucible_paths.forge_mode)
+FORGE_MODE
 forward/*_results.json
 forward/*_ledger.jsonl
 forward/*.jsonl

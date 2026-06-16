@@ -1,0 +1,14 @@
+[Unit]
+Description=Crucible drip cadence — 1 smith every 3h (fires always; the service self-gates on FORGE_MODE=drip)
+
+[Timer]
+# 8 slots/day, 3h apart (~ today's 9 batch cycles), deliberately avoiding the 06:00–08:00
+# roll-up window. The service ExecCondition no-ops these in batch mode, so the timer is safe
+# to leave enabled at all times.
+OnCalendar=*-*-* 02,05,08,11,14,17,20,23:30:00
+# Persistent=false ON PURPOSE: a missed drip slot must NOT replay as a catch-up burst — that
+# would spike the FDR family budget, the exact thing distributed cadence exists to avoid.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,20 @@
+[Unit]
+OnFailure=loop-alert@%n.service
+Description=Crucible drip — 1 smith, 1 cycle (distributed cadence; active only when FORGE_MODE=drip)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/crucible
+Environment=PYTHONUNBUFFERED=1
+# Gate 1 — cadence: run only in drip mode. ExecCondition non-zero => clean skip (no failure/alert).
+ExecCondition=/root/crucible/ops/forge_mode_is.sh drip
+# Gate 2 — killswitch: clean-skip if the global LOOP_DISABLED is present.
+ExecCondition=/bin/bash -c '[ ! -e /root/crucible/LOOP_DISABLED ]'
+# One smith, one claim->run cycle, appended to the same dated log the batch uses (one stream for
+# the morning report + dashboard). FORGE_AGENT=drip tags these rows so they are attributable vs
+# smith-* batch rows in run_log for the A/B. No per-run digest — the digest is the daily roll-up.
+#
+# A/B NOTE: before starting a drip A/B, mirror the nightly forge's active focus (see
+# crucible-forge.service.d/focus.conf) onto this unit, else cadence is confounded with focus.
+ExecStart=/bin/bash -lc 'LOG=/root/crucible/logs/forge-$(date +%%Y-%%m-%%d).log; ln -sf "$LOG" /tmp/crucible_forge.log; FORGE_AGENT=drip python3 -m agent.run_worker --cycles 1 >> "$LOG" 2>&1; python3 agent/forge_state.py >> "$LOG" 2>&1'

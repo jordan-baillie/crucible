@@ -12,6 +12,23 @@ Re-enable: `rm /root/crucible/LOOP_DISABLED`
 - Logs: `/root/crucible/logs/forge-YYYY-MM-DD.log` (symlinked at `/tmp/crucible_forge.log`)
 - Stop a running forge: `systemctl stop crucible-forge.service` (then touch LOOP_DISABLED to prevent restart at next timer fire)
 
+## Cadence mode — batch vs drip (one flag, no double FDR spend)
+`FORGE_MODE` (repo root, gitignored; **absent ⇒ batch**) selects which cadence is live. Both timers
+are always enabled; each unit self-gates via `ExecCondition` so only the chosen mode does work.
+```bash
+cat /root/crucible/FORGE_MODE                 # current mode (batch|drip)
+echo drip  > /root/crucible/FORGE_MODE         # -> 1 smith every 3h (crucible-drip, 8 slots/day)
+echo batch > /root/crucible/FORGE_MODE         # -> nightly 3-smith burst at 03:30 (default)
+```
+- `batch`: `crucible-forge` runs; `crucible-drip` cleanly skips at each 3h slot.
+- `drip`:  `crucible-drip` runs (02,05,08,11,14,17,20,23:30); `crucible-forge` cleanly skips at 03:30.
+- Mode is single-sourced in `crucible_paths.forge_mode()`; the gate is `ops/forge_mode_is.sh`.
+- **A/B caveat:** before a drip A/B, mirror the forge's active focus (`crucible-forge.service.d/focus.conf`)
+  onto `crucible-drip.service`, else cadence is confounded with focus. Attribution is free —
+  run_log tags batch rows `smith-*` vs drip rows `drip`, and only one mode writes at a time.
+- Roll-up steps (triage/backup/report) now `ExecStartPre`-wait for research to be quiescent
+  (`ops/wait_for_research_quiescent.sh`), so a slow/overrunning forge is never read mid-write.
+
 ## Other units
 | Unit | When | What |
 |---|---|---|
