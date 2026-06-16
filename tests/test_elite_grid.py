@@ -64,6 +64,49 @@ def test_min_fitness_and_beta_confound_rejected(pool):
     assert not p.exists() or p.read_text(encoding="utf-8").strip() == ""
 
 
+def test_holdout_failed_strategy_is_not_an_elite(pool):
+    """META-LESSONS #7 (trust only the holdout): a strategy the holdout RAN and REJECTED must never be
+    a high-fitness exploit parent, however strong its search DSR. Root cause of crypto basis-carry
+    being re-spawned 7x (each time re-failing the holdout for decay). 2026-06-16."""
+    elite, p, _ = pool
+    o = _outcome("Crypto basis-carry decayed", "crypto", 0.99)  # great in-sample DSR...
+    o["verdict"]["holdout_pass"] = False                        # ...but the holdout rejected it (decay)
+    o["verdict"]["holdout_sharpe"] = 2.8
+    assert elite._fitness(o["verdict"]) == 0.0
+    elite.record(o)
+    assert not p.exists() or p.read_text(encoding="utf-8").strip() == ""
+
+
+def test_holdout_passed_strategy_is_admitted_and_persists_flag(pool):
+    elite, p, _ = pool
+    o = _outcome("Amihud illiquidity holdout-clean", "US small-cap equities", 0.9)
+    o["verdict"]["holdout_pass"] = True
+    elite.record(o)
+    items = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()]
+    assert len(items) == 1 and items[0]["fitness"] == 0.9
+    assert items[0]["summary"].get("holdout_pass") is True  # persisted so future pool-cleans can see it
+
+
+def test_nan_fitness_rejected(pool):
+    """NaN DSR used to BYPASS the MIN_FIT guard (nan <= 0.5 is False) and pollute the pool."""
+    elite, p, _ = pool
+    o = _outcome("Degenerate NaN-DSR strat", "crypto", float("nan"))
+    o["verdict"]["holdout_pass"] = True  # even with a 'passed' holdout, NaN fitness is junk
+    assert elite._fitness(o["verdict"]) == 0.0
+    elite.record(o)
+    assert not p.exists() or p.read_text(encoding="utf-8").strip() == ""
+
+
+def test_holdout_not_run_is_unaffected(pool):
+    """SCREEN/explore strategies that never reached the holdout (holdout_sharpe=None) keep the old
+    behaviour — the new guard only fires when the holdout actually RAN and failed."""
+    elite, p, _ = pool
+    o = _outcome("Term-structure carry screened", "futures", 0.8)
+    o["verdict"]["holdout_sharpe"] = None      # holdout never ran
+    o["verdict"]["holdout_pass"] = False       # default-ish False, but holdout_sharpe None -> not a 'rejection'
+    assert elite._fitness(o["verdict"]) == 0.8
+
+
 def test_closed_family_never_recorded_or_sampled(pool):
     elite, p, cf = pool
     elite.record(_outcome("Momentum 12-1 premium", "US equities", 0.9))

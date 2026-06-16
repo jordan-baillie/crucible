@@ -9,6 +9,7 @@ sampling (two reactive patches from the value×mom-hammering incident); the queu
 Legacy items (no 'cell' key) are re-binned on first write/read; collisions keep the higher DSR.
 """
 import json
+import math
 
 from crucible_paths import ELITE as POOL, WIKI
 from sdk.gates import gate_metric
@@ -77,10 +78,18 @@ def _fitness(v: dict) -> float:
         return 0.0
     if gate_metric(v, "beta_confound", "beta_confound"):
         return 0.0   # long-only-beta confound -> never seed the evolutionary exploit loop with it
+    # The write-once holdout is the only incorruptible arbiter (META-LESSONS #7). A strategy whose
+    # holdout RAN and REJECTED it must never be a high-fitness exploit parent, however strong its
+    # in-sample DSR — else refine/crossover re-spawn falsified premia (crypto basis-carry failed the
+    # holdout 7x in a row yet kept being re-selected because fitness was search-DSR only). 2026-06-16.
+    if v.get("holdout_sharpe") is not None and v.get("holdout_pass") is False:
+        return 0.0
     if v.get("dsr") is not None:
-        return float(v["dsr"])                 # the deflated, multiple-testing-aware Sharpe = the natural fitness
-    s, h = v.get("search_sharpe"), v.get("holdout_sharpe")
-    return float(min(s, h)) if (s and h and s > 0 and h > 0) else 0.0  # fallback: search/holdout consistency
+        fit = float(v["dsr"])                  # the deflated, multiple-testing-aware Sharpe = the natural fitness
+    else:
+        s, h = v.get("search_sharpe"), v.get("holdout_sharpe")
+        fit = float(min(s, h)) if (s and h and s > 0 and h > 0) else 0.0  # fallback: search/holdout consistency
+    return fit if math.isfinite(fit) else 0.0  # NaN/inf DSR was bypassing the MIN_FIT guard (nan<=0.5 is False) -> reject
 
 
 def _load() -> list:
@@ -104,7 +113,7 @@ def _grid(items: list, closed: set | None = None) -> dict:
 def record(outcome: dict) -> None:
     v = outcome.get("verdict") or {}
     fit = _fitness(v)
-    if fit <= MIN_FIT:
+    if not math.isfinite(fit) or fit <= MIN_FIT:
         return
     if _family(outcome) in _closed_families():
         return  # falsified family — do not seed the evolutionary loop with it
@@ -118,7 +127,7 @@ def _record_locked(outcome: dict, fit: float, v: dict) -> None:
             "proposal": outcome.get("proposal"), "ts": outcome.get("ts"),
             # small verdict summary: feeds cell binning + the refine/orthogonal/crossover prompts
             "summary": {k: v.get(k) for k in
-                        ("dsr", "holdout_sharpe", "search_sharpe", "n_trades", "scope", "tier")}}
+                        ("dsr", "holdout_sharpe", "holdout_pass", "search_sharpe", "n_trades", "scope", "tier")}}
     item["cell"] = cell_of(item)
     g = _grid(_load())
     if item["cell"] in g and g[item["cell"]]["fitness"] >= item["fitness"]:

@@ -185,7 +185,7 @@ def run_one_from_queue():
     queue.complete(item["id"], verdict)
     try:
         from agent import elite
-        elite.record(outcome)  # feed the MAP-Elites grid (best-per-cell by DSR) for the exploit arms
+        elite.record(outcome)  # feed the MAP-Elites grid (best-per-cell by holdout-aware DSR) for the exploit arms
     except Exception:
         pass
     # Deploy policy (still paper-only, no real capital):
