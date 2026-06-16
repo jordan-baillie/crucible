@@ -6,6 +6,7 @@ invoke it when the queue runs dry. Dedup is against recorded experiments + every
 """
 from __future__ import annotations
 
+import os
 import random
 import re
 import sys
@@ -27,9 +28,18 @@ TARGET = 4  # keep at least this many items queued
 # then a Thompson bandit may be fitted (parked — data-first). Exploit arms fall back to explore
 # when pool preconditions are unmet (empty pool / <2 families).
 ARM_SPLIT = (("explore", 0.45), ("refine", 0.25), ("orthogonal", 0.15), ("crossover", 0.15))
+_ARMS = {"explore", "refine", "orthogonal", "crossover"}
 
 
 def _pick_arm(rng) -> str:
+    # Operator-directed override (env CRUCIBLE_FORCE_ARM) for a steered run, e.g. an all-`explore`
+    # commodities batch. Makes directed runs first-class through the SAME top_up() gate logic
+    # (dedup/closed-family/deployability) instead of a parallel seeder that duplicates it. Default
+    # (unset/invalid) = the normal weighted split. Exploit arms still fall back to explore in
+    # _propose_via_arm when the elite pool can't satisfy them.
+    forced = os.environ.get("CRUCIBLE_FORCE_ARM", "").strip().lower()
+    if forced in _ARMS:
+        return forced
     r, c = rng.random(), 0.0
     for arm, w in ARM_SPLIT:
         c += w
