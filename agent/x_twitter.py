@@ -36,7 +36,17 @@ def _key() -> str:
 def _get(path: str, params: dict, timeout: int = 30) -> dict:
     url = f"{BASE}/{path}?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
     req = urllib.request.Request(url, headers={"x-api-key": _key()})
-    return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+    try:
+        return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+    except urllib.error.HTTPError as e:
+        # Surface the API's actual message (e.g. 402 'Credits is not enough.Please recharge'),
+        # not just the bare HTTP status — so the graceful error is actionable.
+        try:
+            body = json.loads(e.read())
+            detail = body.get("message") or body.get("error") or ""
+        except Exception:
+            detail = ""
+        raise RuntimeError(f"HTTP {e.code}: {detail or e.reason}")
 
 
 def _tweet(t: dict) -> dict:
