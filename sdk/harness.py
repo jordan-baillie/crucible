@@ -132,6 +132,54 @@ def _sharpe_doc_anchor():
 
 _maxdd = _maxdd_canon
 
+def _holding_horizon_bars(trades) -> int:
+    """CPCV purge length = the strategy's typical holding horizon in RETURN-SERIES (daily) bars.
+    Median closed-trade duration (entry->exit), calendar-days -> ~trading bars (x5/7), floored at 1.
+    A fixed purge=1 only removes label overlap for 1-bar holds; multi-day-hold families (mean-
+    reversion / swing) leak label overlap at every train/test boundary unless purge >= horizon.
+    Falls back to 1 if dates are missing. Conservative (>= the typical horizon); only tightens CPCV."""
+    spans = []
+    for t in (trades or []):
+        if not isinstance(t, dict):
+            continue
+        e, x = t.get("entry_date"), t.get("exit_date")
+        if not e or not x:
+            continue
+        try:
+            d = (pd.Timestamp(x) - pd.Timestamp(e)).days
+        except Exception:
+            continue
+        if d >= 0:
+            spans.append(d)
+    if not spans:
+        return 1
+    return max(1, int(np.ceil(float(np.median(spans)) * 5.0 / 7.0)))
+
+
+def _commit_holdout_look(strategy_id, cfg_hash, rec, h_pass, h_reasons):
+    """Atomic, locked, FAIL-CLOSED write-once commit of the single holdout look (hardened 2026-06-16).
+    Mirrors the FDR-registry FileLock and re-looks-up INSIDE the lock, so a concurrent smith that
+    claimed the same config_hash while we computed the holdout is caught (write-once preserved under
+    N smiths). Returns (h_pass, h_reasons, raced). A concurrent claim OR an unrecordable append
+    FORCE-FAILS (h_pass=False) -- a holdout that cannot record its one use must never hand out a PASS;
+    that silent degradation is exactly how a zero-false-PASS record erodes invisibly."""
+    try:
+        with FileLock("holdout-ledger", ttl=120):
+            raced = ri.ledger_lookup(cfg_hash)
+            if raced is not None:
+                return False, list(h_reasons) + [
+                    f"WRITE-ONCE RACE: holdout concurrently claimed for config {cfg_hash} "
+                    f"(look {raced.get('ts', '?')}); this read cannot count as out-of-sample"], True
+            ri.ledger_append(rec)
+            return h_pass, h_reasons, False
+    except Exception as e:
+        print(f"[harness] CRITICAL: holdout ledger commit FAILED for {strategy_id} ({e}) -- "
+              f"FAIL-CLOSED (write-once cannot be guaranteed)")
+        return False, list(h_reasons) + [
+            f"WRITE-ONCE UNRECORDABLE: holdout ledger commit failed ({e}); force-failing to "
+            f"preserve the single-use guarantee"], False
+
+
 def _price_matrix(panel):
     """Best-effort (dates x assets) CLOSE-price matrix for the long-only benchmark + the breadth/regime/
     beta gates; None if not a price panel. Handles BOTH MultiIndex orientations: (field, asset) with the
@@ -860,7 +908,10 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
     # accepted: the protected resource is the holdout RETURN series (gated by the write-once
     # ledger), and entry-time membership uses no holdout information to SELECT trades.
     search_trades = [t for t in trades if str(t.get("entry_date", "")) < spec.holdout_start]
-    result = ri.assemble_bundle(search.values, search_trades, grid_returns=grid)
+    # CPCV purge = the strategy's holding horizon (label-overlap window), not a fixed 1 bar -- closes
+    # the boundary leak that optimistically biased multi-day-hold families (2026-06-16).
+    result = ri.assemble_bundle(search.values, search_trades, grid_returns=grid,
+                                purge=_holding_horizon_bars(search_trades))
     # assemble_bundle returns {"bundle": <gate inputs>, "diagnostics": ...}. evaluate_tiers AND the
     # verdict need the INNER bundle — passing the wrapper made EVERY gate 'missing' -> tier ALWAYS FAIL
     # (every forge run failed on this, not on merit). This is THE gate-wiring fix.
@@ -882,13 +933,14 @@ def run_experiment(spec: StrategySpec, write_wiki=True, alert=True) -> dict:
             f"WRITE-ONCE VIOLATION: holdout already burned for config {cfg_hash} "
             f"(first look {prior.get('ts', '?')}); this re-read cannot count as out-of-sample"]
     else:
-        try:
-            ri.ledger_append({"config_hash": cfg_hash, "strategy": spec.id, "family": spec.family,
-                              "ts": pd.Timestamp.now().isoformat(),
-                              "holdout_start": spec.holdout_start, "holdout_sharpe": round(h_sh, 4)})
-        except Exception as e:
-            print(f"[harness] WARNING: holdout ledger append failed ({e}) -- "
-                  f"write-once enforcement degraded for {spec.id}")
+        # WRITE-ONCE COMMIT (hardened 2026-06-16): atomic + locked + FAIL-CLOSED (_commit_holdout_look).
+        # The expensive holdout compute above stays OUTSIDE the lock (the lock wraps only the short commit).
+        rec = {"config_hash": cfg_hash, "strategy": spec.id, "family": spec.family,
+               "ts": pd.Timestamp.now().isoformat(),
+               "holdout_start": spec.holdout_start, "holdout_sharpe": round(h_sh, 4)}
+        h_pass, h_reasons, _raced = _commit_holdout_look(spec.id, cfg_hash, rec, h_pass, h_reasons)
+        if _raced:
+            holdout_burned = True
     # SEARCH-SANITY: a holdout "pass" is meaningless if there was no in-sample edge to confirm.
     # Guards the degenerate case search_sharpe~=0 -> degradation blows up -> spurious holdout pass
     # (this falsely flagged a credit-carry book that the trend over-blend had sunk to ~0 as a near-miss).

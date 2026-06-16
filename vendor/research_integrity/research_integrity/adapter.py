@@ -99,13 +99,19 @@ def daily_returns(equity_curve) -> pd.Series:
 
 
 def cpcv_path_sharpes(returns, n_groups: int = 6, k_test: int = 2,
-                      periods: int = TRADING_DAYS) -> list[float]:
-    """Annualised Sharpe of each CPCV test block over a per-period return series."""
+                      periods: int = TRADING_DAYS, purge: int = 1) -> list[float]:
+    """Annualised Sharpe of each CPCV test block over a per-period return series.
+
+    `purge` = the strategy's holding-horizon (label-overlap window) in bars. A fixed 1 only
+    neutralises 1-bar-hold strategies; multi-day-hold families (mean-reversion/swing) leak
+    label overlap at every train/test boundary unless purge >= holding horizon. Defaults to 1
+    (back-compatible); the harness passes the per-strategy horizon inferred from trade durations.
+    """
     r = np.asarray(pd.Series(returns, dtype=float).dropna(), dtype=float)
     if r.size < n_groups:
         return []
     out: list[float] = []
-    for s in cpcv.cpcv_splits(r.size, n_groups, k_test):
+    for s in cpcv.cpcv_splits(r.size, n_groups, k_test, purge=max(1, int(purge))):
         seg = r[s.test_idx]
         sr = cm.annualized_sharpe(seg, periods)
         if sr == sr:  # drop NaN
@@ -251,6 +257,7 @@ def assemble_bundle(
     n_groups: int = 6,
     k_test: int = 2,
     periods: int = TRADING_DAYS,
+    purge: int = 1,
     seed: int = 0,
 ) -> dict:
     """Compute the full gate bundle + per-axis diagnostics from engine outputs.
@@ -267,7 +274,7 @@ def assemble_bundle(
     Returns {"bundle": <gate inputs>, "diagnostics": <full detail>}.
     """
     pr = pd.Series(primary_returns, dtype=float).dropna()
-    paths = cpcv_path_sharpes(pr, n_groups=n_groups, k_test=k_test, periods=periods)
+    paths = cpcv_path_sharpes(pr, n_groups=n_groups, k_test=k_test, periods=periods, purge=purge)
 
     # PBO + DSR over the config grid
     pbo_val = float("nan")
