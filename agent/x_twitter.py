@@ -119,6 +119,18 @@ def x_user_info(handle: str):
         return {}, str(e)[:200]
 
 
+def x_balance():
+    """API-side credit balance via /oapi/my/info -> {recharge_credits, total_bonus_credits}.
+    AUTHORITATIVE: the twitterapi.io dashboard can lag this. A NEGATIVE recharge_credits means the API
+    sees a deficit (every data call 402s) regardless of what the dashboard shows. Returns (dict, err|None)."""
+    if not _key():
+        return {}, "no twitterapi.io key"
+    try:
+        return _get("oapi/my/info", {}), None   # not under /twitter/; no status wrapper
+    except Exception as e:
+        return {}, str(e)[:200]
+
+
 def format_tweets(tweets) -> str:
     if not tweets:
         return "(no tweets)"

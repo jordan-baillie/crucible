@@ -54,6 +54,16 @@ def x_user_info(handle: str) -> str:
     return "\n".join(f"{k}: {v}" for k, v in info.items())
 
 
+@mcp.tool()
+def x_balance() -> str:
+    """Check the twitterapi.io API-side credit balance (recharge + bonus). AUTHORITATIVE — the dashboard can
+    lag this; a NEGATIVE recharge_credits means the API sees a deficit and all X tools will return 402."""
+    bal, err = X.x_balance()
+    if err:
+        return f"x_balance failed: {err}"
+    return "\n".join(f"{k}: {v}" for k, v in bal.items())
+
+
 # ── Firecrawl — web research (general search + papers + scrape + structured extract) ────────────────
 @mcp.tool()
 def web_search(query: str, limit: int = 8) -> str:
