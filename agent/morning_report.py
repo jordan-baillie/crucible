@@ -7,8 +7,9 @@ Sections:
   3. BAB forward validation: ledger delta + days to verdict.
   4. Ops: service failures, queue state, killswitch.
 
-Replaces digest.py as the human-facing daily picture (digest.py retained for ad-hoc use).
-Scheduled by crucible-morning-report.timer at 07:00 AEST (after the 03:30 forge night).
+The human-facing daily picture, scheduled by crucible-morning-report.timer at 07:00 AEST
+(after the 03:30 forge night). Distinct from digest.py, which still runs post-forge inside
+crucible-forge.service as the severity-routed CRITICAL full-gate-PASS alerter — keep both.
 """
 import json
 import subprocess

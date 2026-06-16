@@ -103,7 +103,7 @@ def _focus() -> str:
 
 def _read_tail(p, max_chars: int):
     """E5: growing files (index, candidates) are read NEWEST-LAST and capped — prompt size must
-    not rise monotonically with project history (cost, latency, 420s-timeout risk; the director
+    not rise monotonically with project history (cost, latency, call-timeout risk; the director
     makes up to 12 propose calls per top-up). Curated files (overview, lessons, closed, catalog)
     stay full: they are pruned by the weekly lint, not by truncation — dropping an anti-pattern
     or a closed decision from the prompt would un-learn it."""
@@ -145,7 +145,8 @@ Return ONLY a JSON object:
 "retail_tradable_5k": "yes|no — can THIS construction be executed at ~$5K via IB/Alpaca (instruments routable, short leg borrowable or index-hedged, no >2x gross leverage)? If no, this proposal will be DOWN-RANKED — prefer redesigning it to a deployable variant",
 "scope": "broad|local — broad if a UNIVERSAL mechanism (theory says it appears across markets; a pass must later GENERALISE) or local if defensibly universe-specific (then forward-validation confirms it)",
 "generalization_plan": "if broad: the untouched universes to confirm the mechanism in (e.g. other cap-tiers/sectors/asset-classes); if local: the economic reason it lives ONLY in this universe + the forward-validation plan"}}"""
-    # 420s: Fable-5 measured 285s on a real propose — 300s left only ~15s headroom (2026-06-10 smoke test)
+    # Inherits the 900s default from agent.llm.call. Fable-5 measured ~285s on a real propose
+    # (2026-06-10 smoke test); the 900s ceiling leaves ample headroom.
     text = _llm_call(prompt)
     obj = extract_json(text)
     return obj if obj is not None else {"raw": text[:1500], "error": "parse_failed"}

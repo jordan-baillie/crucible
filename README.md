@@ -209,7 +209,7 @@ contract (Atlas is the reference implementation), pluggable via `CRUCIBLE_DEPLOY
 | Direction | Interface |
 |---|---|
 | crucible → host | writes `<host>/data/live/<name>/target.json` (today's target weights) |
-| crucible → host | calls `<host>/live/providers.py::deploy_pass(name, capital, broker, expectation, strategy_path)` |
+| crucible → host | calls `<host>/execution/providers.py::deploy_pass(name, capital, broker, expectation, strategy_path)` (Atlas: `from atlas.execution.providers import deploy_pass`) |
 | crucible ← host | reads `<host>/config/live_strategies.json` (registry) + `<host>/data/live/<name>/{book.json,returns.jsonl}` (paper books) for the morning report |
 
 The host owns execution truth (brokers, fills, books); crucible owns research truth (verdicts,

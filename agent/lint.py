@@ -1,6 +1,6 @@
 """Wiki lint — memory hygiene (selective forgetting: the thing the memory research says everyone fails at).
 Succinct + cheap (structural, no LLM): cap the append-only log, prune already-tested candidates, flag orphan
-pages, report health. Run weekly (hephaestus-lint.timer) or on demand: python3 -m agent.lint"""
+pages, report health. Run weekly (crucible-lint.timer) or on demand: python3 -m agent.lint"""
 import re
 from datetime import datetime
 from pathlib import Path
