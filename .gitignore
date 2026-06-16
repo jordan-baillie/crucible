@@ -9,3 +9,4 @@ agent/run_log.jsonl
 forward/*_results.json
 forward/*_ledger.jsonl
 forward/*.jsonl
+mcp/.venv/

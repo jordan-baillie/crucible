@@ -40,19 +40,6 @@ def _research(query):
         return f"(research search failed: {e})", []
 
 
-def _fintwit_block():
-    """Credibility-vetted FinTwit reasoning (graceful, additive). X is an IDEA source here, never a price
-    feed — mine the REASONING of proven-accurate commentators for structural premia; the gate stack on
-    owned data validates. Never breaks the scout if the digest is absent/stale."""
-    try:
-        from agent.fintwit import fintwit_text
-        txt = fintwit_text()
-    except Exception:
-        return ""
-    return ("\n\n### CREDIBILITY-VETTED FINTWIT (proven-accurate commentators — mine their REASONING for "
-            "structural premia, NEVER their directional calls)\n" + txt)
-
-
 def _deep_dive(papers_all, n=2):
     """Deep-extract full methodology/data of up to n OPEN-ACCESS (arXiv) papers via /scrape JSON-mode."""
     try:
@@ -102,13 +89,13 @@ def scout(n_queries=4):
     queries = _json(q_raw) or ["systematic risk premia retail backtest 2025 carry trend vol",
                                "crypto delta neutral funding basis strategy 2025"]
     queries = queries[:n_queries]
-    # 2. search — Brave (broad web+news) + Firecrawl research papers + credibility-vetted FinTwit
+    # 2. search — Brave (broad web+news) + Firecrawl research papers; deep-dive top open-access papers
     blocks, papers_all = [], []
     for q in queries:
         ptxt, pitems = _research(q)
         papers_all += pitems
         blocks.append(f"### QUERY: {q}\n{_brave(q)}\n\n[ACADEMIC PAPERS — research frontier]\n{ptxt}")
-    results = "\n\n".join(blocks) + _deep_dive(papers_all) + _fintwit_block()
+    results = "\n\n".join(blocks) + _deep_dive(papers_all)
     # 3. distill into structured findings + testable candidates (with sources), flag contradictions
     d_raw = _pi(f"{ctx}\n\n=== WEB SEARCH RESULTS ===\n{results}\n\n"
                 f"Distill these into NEW knowledge for the wiki. Return ONLY JSON:\n"
@@ -117,11 +104,6 @@ def scout(n_queries=4):
                 f'"data_feasible":"free/owned?","not_already_tested":"...","source":"..."}}], '
                 f'"premia_updates": ["short factual updates to add to premia/market pages, with source"], '
                 f'"contradictions": ["any finding that contradicts a wiki claim"]}}\n'
-                f'For any candidate derived from the CREDIBILITY-VETTED FINTWIT block: extract the STRUCTURAL '
-                f'PREMIUM/MECHANISM the commentator REASONS about — NEVER their directional trade call (a call '
-                f'is a forbidden prediction edge). If a vetted post is only a call/headline/self-promo with no '
-                f'mechanism, DROP it. Set that candidate\'s "source" to "fintwit:@handle" and set crowding_risk '
-                f'honestly (FinTwit narratives skew crowded). '
                 f'Surface DIVERSE candidates across DIFFERENT premia/markets (NOT multiple variants of one '
                 f'theme); PREFER ideas buildable on the OWNED data above (mark data_feasible accordingly).')
     findings = _json(d_raw) or {"summary": d_raw[:600], "candidates": [], "premia_updates": [], "contradictions": []}

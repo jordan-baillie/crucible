@@ -115,6 +115,59 @@ def format_deep(item, data) -> str:
     return f"- [DEEP DIVE] {title} ({url})\n  {fields}"[:2000]
 
 
+# ---------------------------------------------------------------------------------------------------
+# UPGRADE (2026-06-16): generalize beyond the nightly scout's narrow research-paper scope into a full
+# agentic WEB-research surface (general search + scrape-ANY-url + structured extract). The functions
+# above (research_search/deep_extract, arXiv-only, credit-capped) stay UNCHANGED for the no-tools nightly
+# forge; these are the broader tools exposed to the agent via the MCP. Same /v2/search + /v2/scrape
+# endpoints, just not restricted to the research category / open-arXiv domains.
+# ---------------------------------------------------------------------------------------------------
+
+def web_search(query: str, limit: int = 8, tbs: str | None = None):
+    """General Firecrawl web search (NOT restricted to the research category). ~2 credits/call.
+    Returns ([{title,url,description}], error|None). GRACEFUL."""
+    if not _key():
+        return [], "no firecrawl key"
+    try:
+        body = {"query": query, "sources": ["web"], "limit": limit}
+        if tbs:
+            body["tbs"] = tbs
+        d = _post("search", body)
+        data = d.get("data") or {}
+        items = data.get("web") or (data if isinstance(data, list) else [])
+        return [{"title": r.get("title"), "url": r.get("url"), "description": r.get("description")}
+                for r in items if isinstance(r, dict)], None
+    except Exception as e:
+        return [], str(e)[:200]
+
+
+def scrape_url(url: str, max_chars: int = 12000):
+    """Scrape ANY url to clean markdown (main content). ~1 credit. Returns (markdown, error|None). GRACEFUL."""
+    if not _key():
+        return "", "no firecrawl key"
+    try:
+        d = _post("scrape", {"url": url, "onlyMainContent": True, "formats": ["markdown"]})
+        md = (d.get("data") or {}).get("markdown") or ""
+        return md[:max_chars], None
+    except Exception as e:
+        return "", str(e)[:200]
+
+
+def extract_url(url: str, prompt: str, schema: dict | None = None):
+    """Structured LLM extraction from ANY url (generalizes deep_extract beyond open-arXiv). ~5 credits.
+    Returns (dict, error|None). GRACEFUL."""
+    if not _key():
+        return {}, "no firecrawl key"
+    try:
+        fmt = {"type": "json", "prompt": prompt}
+        if schema:
+            fmt["schema"] = schema
+        d = _post("scrape", {"url": url, "onlyMainContent": True, "formats": [fmt]})
+        return ((d.get("data") or {}).get("json") or {}), None
+    except Exception as e:
+        return {}, str(e)[:200]
+
+
 if __name__ == "__main__":
     import sys
     q = sys.argv[1] if len(sys.argv) > 1 else "cross-sectional cryptocurrency momentum factor backtest"
