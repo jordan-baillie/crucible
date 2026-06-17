@@ -113,7 +113,16 @@ def check_forward_paper(fail):
             continue
         rows = [json.loads(l) for l in rj.read_text(encoding="utf-8").splitlines() if l.strip()]
         if not rows:
-            fail(f"S4 forward-paper[{book}]: returns.jsonl EMPTY")
+            # A just-restarted / re-baselined book legitimately has a baseline equity_state but
+            # no returns YET — healthy-but-new, not broken (mirrors L4's 'too new to assess').
+            es = LIVE / book / "equity_state.json"
+            try:
+                base = json.loads(es.read_text(encoding="utf-8")) if es.exists() else {}
+            except (OSError, json.JSONDecodeError):
+                base = {}
+            if base.get("date") and _bdays_since(base["date"]) <= MAX_RETURNS_AGE_BD:
+                continue  # fresh baseline; real returns accrue next cycle
+            fail(f"S4 forward-paper[{book}]: returns.jsonl EMPTY and no fresh baseline — recorder dead?")
             continue
         last = rows[-1]
         gap = _bdays_since(last["date"])
