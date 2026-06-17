@@ -23,7 +23,7 @@ import pandas as pd
 MIN_TRADES = 50                 # fewer => degenerate / luck, not a strategy
 MIN_PEAK_FRAC_OF_DESIGN = 0.25  # peak concurrency must be >= 25% of the intended book size
 MIN_PEAK_ABS = 3                # ...and at least 3 names absolute
-MAX_SINGLE_NAME_SHARE = 0.40    # max fraction of dollar-position-days in one ticker
+MAX_SINGLE_NAME_SHARE = 0.40    # max fraction of |dollar|-position-days (gross exposure) in one ticker
 MIN_REALIZED_VS_DESIGN = 0.50   # peak_concurrent / expected_positions
 DEFAULT_N_SECTORS = 11          # GICS-style sector count for the design-intent calc
 
@@ -114,20 +114,32 @@ def deployment_sanity(trades: List[Dict[str, Any]],
                     f"a 'hedge' that big is index-substitution in disguise")
                 hedge_tickers = None
 
-    def _w(t):
+    def _gross_position_days(t):
+        """Gross dollar-position-days = hold_days * |position_value| — the unit for ALL
+        position-day SHARE/exposure accounting (single-name, sector, hedge share).
+
+        |position_value|, NOT signed: concentration is a MAGNITUDE concept (a short is
+        exactly as concentrated as a long). A SIGNED denominator makes a market-neutral
+        long/short book's total_pos_days cancel/flip toward zero, turning every share into
+        a degenerate value. Observed 2026-06-17: a genuinely diversified 412-name L/S book
+        (true top-name share 0.015) was force-failed with single_name_share computed as 1.00
+        (signed total = -47.7e9 vs abs +133.5e9). Long-only books are unaffected (pv >= 0 =>
+        abs == signed => byte-identical to the validated baseline).
+        """
         e, x = t.get("entry_date"), t.get("exit_date")
         if e is None or x is None:
             return 0.0
         hd = t.get("hold_days")
         hd = float(hd) if hd is not None else float(max(0, (pd.Timestamp(x) - pd.Timestamp(e)).days))
-        return (hd + 1e-9) * (float(t.get("position_value") or 0.0) or 1.0)
+        pv = abs(float(t.get("position_value") or 0.0)) or 1.0   # |dollar weight|; equal-weight fallback
+        return (hd + 1e-9) * pv
 
     if hedge_tickers:
         hset = set(hedge_tickers)
         hedge_trades = [t for t in trades if t.get("ticker") in hset]
         alpha_trades = [t for t in trades if t.get("ticker") not in hset]
-        total_w = sum(_w(t) for t in trades)
-        hedge_share = (sum(_w(t) for t in hedge_trades) / total_w) if total_w > 0 else 0.0
+        total_w = sum(_gross_position_days(t) for t in trades)
+        hedge_share = (sum(_gross_position_days(t) for t in hedge_trades) / total_w) if total_w > 0 else 0.0
         if hedge_share > hedge_cap:
             hedge_reasons.append(
                 f"hedge_share {hedge_share:.2f} > declared cap {hedge_cap:.2f} — "
@@ -161,8 +173,7 @@ def deployment_sanity(trades: List[Dict[str, Any]],
         hd = t.get("hold_days")
         hd = float(hd) if hd is not None else float(max(0, (x - e).days))
         hd += 1e-9
-        pv = float(t.get("position_value") or 0.0) or 1.0   # dollar weight; equal-weight fallback
-        w = hd * pv
+        w = _gross_position_days(t)   # |dollar|-position-days (abs): signed cancels for L/S books
         tk = t.get("ticker", "?")
         sec = _sector_of(t)
         pos_days_by_ticker[tk] = pos_days_by_ticker.get(tk, 0.0) + w

@@ -34,13 +34,23 @@ drip means flipping the flag is the only switch — no double FDR spend, fully r
   mode writes at a time, so batch vs drip periods are cleanly separable by date.
 
 ## Steps
-- [ ] 1. crucible_paths.py: FORGE_MODE_FILE + forge_mode(); .gitignore FORGE_MODE
-- [ ] 2. ops/forge_mode_is.sh (+chmod +x); standalone exit-code tests
-- [ ] 3. ops/wait_for_research_quiescent.sh (+chmod +x); functional test vs transient sleep unit
-- [ ] 4. crucible-drip.service + .timer (live + repo copy)
-- [ ] 5. forge mode-gate drop-in; rollup wait-quiescent drop-ins (live + repo mirror)
-- [ ] 6. daemon-reload; systemd-analyze verify; list-timers; throwaway-unit ExecCondition proof
-- [ ] 7. Leave mode=batch so tonight's 03:30 batch runs unchanged + robust. Enable drip.timer.
+- [x] 1. crucible_paths.py: FORGE_MODE_FILE + forge_mode(); .gitignore FORGE_MODE
+- [x] 2. ops/forge_mode_is.sh (+chmod +x); standalone exit-code tests PASS
+- [x] 3. ops/wait_for_research_quiescent.sh (+chmod +x); 3-path functional test PASS
+- [x] 4. crucible-drip.service + .timer (live + repo copy)
+- [x] 5. forge mode-gate drop-in; rollup wait-quiescent drop-ins (live + repo mirror)
+- [x] 6. daemon-reload; systemd-analyze verify clean; ExecCondition skip/run proven; 8 slots
+- [x] 7. mode=batch (default); drip.timer enabled-but-dormant; 03:30 batch armed. Commit ca050fe.
+
+## REVIEW (2026-06-17, shipped — commit ca050fe)
+- A and C both done, all verify-as-built. The REAL drip.service was started in batch mode and
+  cleanly skipped (Result=exec-condition) with run_log unchanged at 130 rows -> 0 cycles burned.
+- Net behaviour tonight: identical to before + robust. forge ExecCondition=batch -> runs as today;
+  drip fires at 02:30/05:30/... and cleanly no-ops; roll-up waits for quiescence (no-op when idle).
+- To run the A/B later: `echo drip > FORGE_MODE` (mirror focus first), let it soak, compare
+  smith-* vs drip gate-progress per family spent, then `echo batch > FORGE_MODE` to revert.
+- Out-of-scope follow-ups filed as tasks: (i) single-source systemd install.sh + reconcile
+  repo<->live drift; (ii) extend measure_scout.py to auto-split batch vs drip for the A/B readout.
 
 ## Safety
 - Next forge 03:30 (~2h). Must end mode=batch (default) → batch runs as today; drip dormant;
