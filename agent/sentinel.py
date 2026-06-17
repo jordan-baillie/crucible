@@ -24,6 +24,8 @@ Checks:
                                 package the runtime imports (no stale rails on a standalone
                                 checkout; 2026-06-17 a fix edited the vendored copy while
                                 runtime used the /root/shared install — silent divergence)
+  S13 systemd unit sync         live crucible-* units + drop-ins == the repo (systemd/install.sh
+                                --check) — a fix to one must not silently leave the other stale
 
 Usage: python3 -m agent.sentinel
 """
@@ -256,9 +258,28 @@ def check_rails_vendoring(fail):
              f"— files differ: {differing[:6]}. Run ops/sync_vendored_ri.sh + commit (stale rails ship otherwise)")
 
 
+def check_systemd_install(fail):
+    """S13: live crucible systemd units + drop-ins must match the repo (single-sourced via
+    systemd/install.sh --check, which owns the comparison logic). Drift = a fix to one side
+    silently leaves the other stale (same class as S12 rails). Read-only (--check never writes)."""
+    script = ROOT / "systemd" / "install.sh"
+    if not script.exists():
+        fail("S13 systemd sync: systemd/install.sh missing")
+        return
+    try:
+        r = subprocess.run(["bash", str(script), "--check"], capture_output=True, text=True, timeout=30)
+    except Exception as e:
+        fail(f"S13 systemd sync: install.sh --check crashed ({type(e).__name__}: {str(e)[:120]})")
+        return
+    if r.returncode != 0:
+        drifts = [l for l in r.stdout.splitlines() if l.startswith("DRIFT")]
+        fail(f"S13 systemd sync: repo<->live DRIFT — {'; '.join(drifts[:4])}. Run systemd/install.sh + commit")
+
+
 CHECKS = [check_sharadar, check_sep_cache, check_forward_paper,
           check_wiki_pushed, check_queue, check_run_log, check_holdout_ledger,
-          check_loop_registry, check_forward_paper_log, check_rails_vendoring]
+          check_loop_registry, check_forward_paper_log, check_rails_vendoring,
+          check_systemd_install]
 
 
 def main() -> int:

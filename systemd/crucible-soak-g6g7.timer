@@ -1,0 +1,7 @@
+[Unit]
+Description=Nightly G6/G7 soak comparison
+[Timer]
+OnCalendar=*-*-* 07:45
+Persistent=true
+[Install]
+WantedBy=timers.target

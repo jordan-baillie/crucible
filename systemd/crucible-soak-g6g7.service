@@ -1,0 +1,6 @@
+[Unit]
+Description=G6/G7 consolidation shadow-soak (temporary — dies at cutover)
+[Service]
+Type=oneshot
+WorkingDirectory=/root/crucible
+ExecStart=/usr/bin/python3 forward/soak_g6g7.py

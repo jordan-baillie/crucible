@@ -6,4 +6,4 @@ Description=Nightly runtime-error triage — diagnoses forge crashes, drafts SDK
 Type=oneshot
 Environment=HOME=/root
 WorkingDirectory=/root/crucible
-ExecStart=/usr/bin/python3 -m agent.triage
+ExecStart=/bin/bash -lc "python3 -m agent.triage; python3 agent/forge_state.py"

@@ -1,0 +1,7 @@
+[Unit]
+Description=Weekly Sharadar bulk refresh (SEP/TICKERS/ACTIONS)
+[Service]
+Type=simple
+WorkingDirectory=/root/crucible
+ExecStart=/bin/bash -c 'python3 ops/sharadar_download.py > /tmp/sharadar_refresh.log 2>&1'
+TimeoutStartSec=3600

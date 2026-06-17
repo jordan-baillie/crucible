@@ -10,4 +10,4 @@ Environment=PYTHONUNBUFFERED=1
 # 3 parallel smiths share the queue/locks/FDR registry (no duplicate work, correct FDR bar).
 # Waits for all 3, then sends the Telegram digest. Persistent dated log under logs/ (30-day retention,
 # pruned by crucible-lint); /tmp/crucible_forge.log stays as a symlink for humans + the dashboard API.
-ExecStart=/bin/bash -lc 'LOG=/root/crucible/logs/forge-$(date +%%Y-%%m-%%d).log; ln -sf "$LOG" /tmp/crucible_forge.log; for i in 1 2 3; do (FORGE_AGENT=smith-$i python3 -m agent.run_worker --cycles 3 >> "$LOG" 2>&1) & done; wait; python3 agent/digest.py >> "$LOG" 2>&1'
+ExecStart=/bin/bash -lc 'LOG=/root/crucible/logs/forge-$(date +%%Y-%%m-%%d).log; ln -sf "$LOG" /tmp/crucible_forge.log; for i in 1 2 3; do (FORGE_AGENT=smith-$i python3 -m agent.run_worker --cycles 3 >> "$LOG" 2>&1) & done; wait; python3 agent/digest.py >> "$LOG" 2>&1; python3 agent/forge_state.py >> "$LOG" 2>&1'

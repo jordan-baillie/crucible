@@ -1,0 +1,7 @@
+[Unit]
+Description=Weekly Sharadar refresh (Fridays 22:00, before weekend research)
+[Timer]
+OnCalendar=Fri 22:00
+Persistent=true
+[Install]
+WantedBy=timers.target
