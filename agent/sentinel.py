@@ -20,6 +20,10 @@ Checks:
                                 (comprehension-debt rule: unregistered loop = stray)
   S11 Forward-paper log scan    yesterday's cycle log carries no 'FAILED' step markers
                                 (the steps are '|| echo FAILED' guarded — exit 0 lies)
+  S12 Rails vendoring sync      crucible's vendored research_integrity == the INSTALLED
+                                package the runtime imports (no stale rails on a standalone
+                                checkout; 2026-06-17 a fix edited the vendored copy while
+                                runtime used the /root/shared install — silent divergence)
 
 Usage: python3 -m agent.sentinel
 """
@@ -33,7 +37,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from crucible_paths import DATA, WIKI, QUEUE, RUN_LOG, REGISTRY
+from crucible_paths import ROOT, DATA, WIKI, QUEUE, RUN_LOG, REGISTRY
 
 SHARADAR = DATA / "sharadar"
 CACHE = DATA / "cache" / "sep_long_v2.parquet"
@@ -217,9 +221,35 @@ def check_forward_paper_log(fail):
              f"(unit exited 0 — this is the only place the failure shows)")
 
 
+def check_rails_vendoring(fail):
+    """S12: crucible's VENDORED research_integrity snapshot must match the INSTALLED package
+    the runtime actually imports — else a standalone crucible checkout would run STALE rails.
+    (2026-06-17: a deployment_sanity fix edited the vendored copy while the runtime imported
+    the /root/shared editable install; the two silently diverged. Re-vendor: ops/sync_vendored_ri.sh.)"""
+    import importlib.util, hashlib
+    spec = importlib.util.find_spec("research_integrity")
+    if spec is None or not spec.origin:
+        fail("S12 rails sync: cannot locate the installed research_integrity package")
+        return
+    installed = Path(spec.origin).parent
+    vendored = ROOT / "vendor" / "research_integrity" / "research_integrity"
+    if not vendored.exists():
+        fail(f"S12 rails sync: vendored copy missing at {vendored} — run ops/sync_vendored_ri.sh")
+        return
+
+    def _hashes(d: Path) -> dict:
+        return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(d.glob("*.py"))}
+
+    hi, hv = _hashes(installed), _hashes(vendored)
+    if hi != hv:
+        differing = sorted({k for k in set(hi) | set(hv) if hi.get(k) != hv.get(k)})
+        fail(f"S12 rails sync: vendored research_integrity DRIFTED from installed ({installed}) "
+             f"— files differ: {differing[:6]}. Run ops/sync_vendored_ri.sh + commit (stale rails ship otherwise)")
+
+
 CHECKS = [check_sharadar, check_sep_cache, check_forward_paper,
           check_wiki_pushed, check_queue, check_run_log, check_holdout_ledger,
-          check_loop_registry, check_forward_paper_log]
+          check_loop_registry, check_forward_paper_log, check_rails_vendoring]
 
 
 def main() -> int:
