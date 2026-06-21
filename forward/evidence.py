@@ -81,17 +81,41 @@ def _cutoff(lookback_days: int = LOOKBACK_DAYS) -> str:
     return (date.today() - timedelta(days=lookback_days)).isoformat()
 
 
+def _inception(returns: list) -> str | None:
+    """Current paper-epoch start = earliest date in returns.jsonl. record_returns.py resets the
+    baseline and emits NO return across a capital_base re-basing (discontinuity), so returns is
+    the single source of truth for the CONTINUOUS epoch. runs.jsonl/fills.jsonl are append-only
+    and retain PRE-baseline rows — counting those borrows a retired epoch's track record toward
+    the go-live decision (Honest-Paper-Book violation; the 66% pre-rebaseline drawdown that
+    permanently failed G5 on a stale 2026-06-17 block is exactly this class)."""
+    return min((str(r["date"]) for r in returns if r.get("date")), default=None)
+
+
+def _epoch_floor(returns: list) -> str:
+    """The stricter of (60d lookback, current-epoch inception): run/fill-derived gates count only
+    evidence that is BOTH recent AND from the continuous current equity series."""
+    inc = _inception(returns)
+    return max(_cutoff(), inc) if inc else _cutoff()
+
+
 def evaluate(book: str) -> dict:
     d = LIVE / book
     returns = _jsonl(d / "returns.jsonl")
     runs = _jsonl(d / "runs.jsonl")
     fills = _jsonl(d / "fills.jsonl")
 
+    # Single-sourced epoch boundary: run/fill-derived gates (G1 fills, G5 blocked, G6/G7) must
+    # count ONLY the current continuous paper-epoch, like the returns-derived gates (G2/G3) already
+    # do — never a pre-rebaseline epoch's borrowed fills/blocks.
+    floor = _epoch_floor(returns)
+    def _in_epoch(r) -> bool:
+        return str(r.get("date", "")) >= floor
+
     n_days = len(returns)
-    n_fills = sum(len(r.get("orders") or []) for r in runs if not r.get("dry_run"))
+    n_fills = sum(len(r.get("orders") or []) for r in runs if not r.get("dry_run") and _in_epoch(r))
     rets = [float(r["ret"]) for r in returns if r.get("ret") is not None]
     expectancy = sum(rets) / len(rets) if rets else None
-    blocked = [r for r in runs if r.get("blocked")]
+    blocked = [r for r in runs if r.get("blocked") and _in_epoch(r)]
 
     dates = [r["date"] for r in returns]
     try:
@@ -114,7 +138,7 @@ def evaluate(book: str) -> dict:
         "G5_reconciliation": {"value": len(blocked), "need": "0 blocked runs",
                               "pass": not blocked},
         "G6_slippage": _g6(book, returns, fills),
-        "G7_broker_errors": _g7(runs),
+        "G7_broker_errors": _g7(runs, returns),
     }
     scoreable = [g for g in gates.values() if g["pass"] is not None]
     # PASS requires ALL SEVEN gates scoreable and green — a gate without data is not a pass
@@ -145,7 +169,7 @@ def _g6(book: str, returns: list, fills: list) -> dict:
     Day-1 build excluded; build day = EARLIEST fill across ALL fills (not just window),
     so the exclusion stays correct after the build day ages out of the lookback."""
     import statistics
-    cut = _cutoff()
+    cut = _epoch_floor(returns)  # never count a pre-rebaseline epoch's fills toward slippage
     build_day = min((str(f["date"]) for f in fills if f.get("date")), default=None)
 
     def _slip(f):
@@ -174,12 +198,12 @@ def _g6(book: str, returns: list, fills: list) -> dict:
             "lookback_days": LOOKBACK_DAYS, "build_day_excluded": build_day}
 
 
-def _g7(runs: list) -> dict:
+def _g7(runs: list, returns: list) -> dict:
     """G7 — broker rejection rate, 60d window (prereg-g6g7-consolidation). Wash-trade
     collisions excluded from numerator AND denominator (shared-paper-account artifact,
     impossible on dedicated canary/live accounts — not deployability evidence) but
     reported; ok=None rows (broker-result join missing) out of denominator, reported."""
-    cut = _cutoff()
+    cut = _epoch_floor(returns)  # never count a pre-rebaseline epoch's broker errors
     n_err, n_ok, n_wash, n_unmatched = 0, 0, 0, 0
     for r in runs:
         if r.get("dry_run") or r.get("blocked") or str(r.get("date", "")) < cut:

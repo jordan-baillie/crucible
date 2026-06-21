@@ -111,13 +111,24 @@ def canary_lookahead():
     Needs a small param grid: DSR/PBO require >=2 grid variants to compute (single-config
     grids report NaN -> tier mechanically FAILs and MCPT never runs -> the canary would die
     at the wrong gate and leave MCPT untested). Every variant cheats identically, so the
-    classical stack (DSR/PBO/CPCV/holdout) must love all of them — that's the point."""
+    classical stack (DSR/PBO/CPCV/holdout) must love all of them — that's the point.
+
+    DILUTION (2026-06-21): the UNDILUTED weekly cheat had Sharpe ~5 -> implied IC ~0.41. The
+    breadth-overfit demotion gate went ACTIVE 2026-06-15 (harness.BREADTH_DEMOTES_FROM) and
+    correctly kills any IR that high BEFORE stage-2, so MCPT went untested from 2026-06-17 on
+    (yellow canary). Same class as the DSR/PBO-NaN problem above: tune the cheat so it slips the
+    EARLIER gates and lands at its designated one. Seeded noise drops IR to ~2.0 (implied IC
+    ~0.16 < IMPLIED_IC_MAX 0.20) — still a fat leak the classical stack loves, and the fwd-peek
+    survives panel permutation so MCPT still catches the construction artifact."""
     rng = np.random.default_rng(SEED + 1)
     panel = _panel(rng)
 
     def w(p, top_n: int = 10, **k):
         fwd = p.pct_change().shift(-1)            # tomorrow's return, known today: the leak
-        return _top10(fwd, freq="W-FRI", n=top_n)  # undiluted weekly cheat: Sharpe ~5 in-sample
+        sig = float(p.pct_change().stack(future_stack=True).std())  # panel daily vol (permutation-invariant)
+        nz = np.random.default_rng(SEED + 11).standard_normal(fwd.shape)  # deterministic dilution
+        score = fwd + 2.0 * sig * pd.DataFrame(nz, index=fwd.index, columns=fwd.columns)
+        return _top10(score, freq="W-FRI", n=top_n)  # diluted weekly cheat: IR ~2 in-sample, still leaks
 
     v = _run(_spec("canary-lookahead-leak", "canary_lookahead", panel, w,
                    grid={"default": {}, "top8": {"top_n": 8}, "top12": {"top_n": 12}}))
