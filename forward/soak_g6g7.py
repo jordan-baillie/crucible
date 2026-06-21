@@ -34,8 +34,11 @@ def compare(book: str) -> dict:
     fills = evidence._jsonl(d / "fills.jsonl")
     runs = evidence._jsonl(d / "runs.jsonl")
 
+    # returns=[] -> pure 60d window (no epoch floor): this is a PARITY check against atlas's
+    # slippage_gate/broker_error_gate, which are not epoch-aware, so both sides must window
+    # identically. Production evaluate() passes real returns and DOES epoch-window.
     c6 = evidence._g6(book, [], fills)
-    c7 = evidence._g7(runs)
+    c7 = evidence._g7(runs, [])
     a6 = agates.slippage_gate(fills)
     a7 = agates.broker_error_gate(runs)
 
