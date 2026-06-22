@@ -6,7 +6,39 @@ from __future__ import annotations
 import json
 import subprocess
 
-from agent.config import pi_cmd
+from agent.config import llm_cmd
+
+
+class LLMError(RuntimeError):
+    """A hard LLM-provider failure (auth expired, provider error, empty completion).
+    Raised LOUDLY so a dead brain can never again masquerade as a quiet empty result
+    (the 2026-06-20 OAuth expiry silently produced two '0-candidate' forge nights: the
+    error event was swallowed and callers saw '' == 'the model had nothing to say')."""
+
+
+def stream_error(stream: str) -> str | None:
+    """Return the provider errorMessage if the stream carried a stopReason=='error'
+    event, else None. Both pi and summon emit this on the assistant message."""
+    for line in stream.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except Exception:
+            continue
+        msg = ev.get("message")
+        if isinstance(msg, dict) and msg.get("stopReason") == "error":
+            return msg.get("errorMessage") or "provider error (no message)"
+    return None
+
+
+def healthcheck() -> None:
+    """Raise LLMError unless a trivial generation round-trips. Used as a forge pre-flight
+    so a night never starts on a dead provider."""
+    out = call("Reply with exactly: OK", timeout=120)
+    if "OK" not in out:
+        raise LLMError(f"healthcheck returned no usable text: {out!r:.80}")
 
 
 def call(prompt: str, timeout: int = 900) -> str:
@@ -18,9 +50,15 @@ def call(prompt: str, timeout: int = 900) -> str:
     the salvage path was silently converting near-timeouts into truncated code
     (-> false consistency failures -> wasted fix() calls)."""
     try:
-        r = subprocess.run(pi_cmd(), input=prompt, capture_output=True, text=True,
+        r = subprocess.run(llm_cmd(), input=prompt, capture_output=True, text=True,
                            timeout=timeout)
-        return assistant_text(r.stdout)
+        text = assistant_text(r.stdout)
+        # LOUD on hard failure: a provider error with no salvageable text must raise, not
+        # return '' (which scout/propose silently treat as 'no candidates' -> idle forge).
+        err = stream_error(r.stdout)
+        if err and not text.strip():
+            raise LLMError(err)
+        return text
     except subprocess.TimeoutExpired as e:
         out = e.stdout.decode() if isinstance(e.stdout, (bytes, bytearray)) else (e.stdout or "")
         text = assistant_text(out)

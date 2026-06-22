@@ -7,7 +7,13 @@ After=network-online.target
 Type=oneshot
 WorkingDirectory=/root/crucible
 Environment=PYTHONUNBUFFERED=1
+# Fail-closed $0 routing: force the Claude-Max subscription OAuth path and refuse to fall back to
+# any pay-per-token ANTHROPIC_API_KEY (the fleet migrated pi -> summon on 2026-06-22).
+Environment=SUMMON_FORCE_OAUTH_ROUTING=1
 # 3 parallel smiths share the queue/locks/FDR registry (no duplicate work, correct FDR bar).
 # Waits for all 3, then sends the Telegram digest. Persistent dated log under logs/ (30-day retention,
 # pruned by crucible-lint); /tmp/crucible_forge.log stays as a symlink for humans + the dashboard API.
-ExecStart=/bin/bash -lc 'LOG=/root/crucible/logs/forge-$(date +%%Y-%%m-%%d).log; ln -sf "$LOG" /tmp/crucible_forge.log; for i in 1 2 3; do (FORGE_AGENT=smith-$i python3 -m agent.run_worker --cycles 3 >> "$LOG" 2>&1) & done; wait; python3 agent/digest.py >> "$LOG" 2>&1; python3 agent/forge_state.py >> "$LOG" 2>&1'
+# PRE-FLIGHT: a trivial LLM round-trip must succeed first. If the provider/auth is down the unit
+# FAILS LOUDLY (OnFailure=loop-alert) instead of burning a silent 0-candidate night (cf. the
+# 2026-06-20 OAuth-expiry incident: two dead nights under a green checkmark).
+ExecStart=/bin/bash -lc 'LOG=/root/crucible/logs/forge-$(date +%%Y-%%m-%%d).log; ln -sf "$LOG" /tmp/crucible_forge.log; if ! python3 -c "from agent.llm import healthcheck; healthcheck()" >> "$LOG" 2>&1; then echo "[forge] PRE-FLIGHT LLM healthcheck FAILED — provider/auth down; aborting before spending a dead night" >> "$LOG"; exit 1; fi; for i in 1 2 3; do (FORGE_AGENT=smith-$i python3 -m agent.run_worker --cycles 3 >> "$LOG" 2>&1) & done; wait; python3 agent/digest.py >> "$LOG" 2>&1; python3 agent/forge_state.py >> "$LOG" 2>&1'

@@ -36,12 +36,23 @@ def _thinking_args() -> list[str]:
     return ["--thinking", lvl]
 
 
-def pi_cmd() -> list[str]:
-    """The pi invocation for ALL forge LLM calls.
+def llm_cmd() -> list[str]:
+    """The summon invocation for ALL forge LLM calls.
+
+    Migrated pi -> summon (2026-06-22): the fleet's $0-Max OAuth now lives in summon
+    (anthropic-oauth extension); the legacy pi auth path expired and `pi login` no longer
+    works on this box. summon accepts the identical flag set and its JSON stream is parsed
+    by agent.llm.assistant_text unchanged. Routing is fail-closed to the subscription via
+    SUMMON_FORCE_OAUTH_ROUTING=1 (set in the systemd unit; no ANTHROPIC_API_KEY present).
 
     --no-tools is critical: these are PURE generation calls (given context -> return JSON/code).
-    Without it, pi runs AGENTICALLY and the codegen step ran the entire backtest itself in a bash
-    tool loop until the 15-min timeout -> crash, plus ~2x compute and heavy Max-quota burn (the
-    issuance-factor run died exactly this way). --no-context-files skips AGENTS.md discovery."""
-    return ["pi", "-p", "--model", MODEL, *_thinking_args(), "--no-tools", "--no-context-files",
+    Without it the agent runs AGENTICALLY and codegen ran the entire backtest itself in a bash
+    tool loop until timeout -> crash, plus ~2x compute and heavy quota burn (the issuance-factor
+    run died exactly this way). --no-context-files skips AGENTS.md/CLAUDE.md discovery."""
+    return ["summon", "-p", "--model", MODEL, *_thinking_args(), "--no-tools", "--no-context-files",
             "--system-prompt", SYS, "--mode", "json"]
+
+
+# Back-comat alias: some callers/tests still import the historical name. Single source of truth
+# is llm_cmd(); this alias must never diverge from it.
+pi_cmd = llm_cmd
