@@ -114,8 +114,15 @@ def _extract_code(text: str) -> str:
     return (max(blocks, key=len) if blocks else (text or "")).strip()
 
 
-def _looks_complete(code: str) -> bool:
-    return "def signal" in code and len(code) > 300
+def looks_complete(code: str) -> bool:
+    """True only for a runnable module body. The single source of truth for "is this code
+    safe to write+run": run_worker GATES the strategy-file write on this so an empty/truncated
+    module can never reach disk (loading it raises an opaque AttributeError on `m.SPEC` that
+    triage cannot diagnose). Keep the threshold here, not duplicated at call sites."""
+    return "def signal" in (code or "") and len(code or "") > 300
+
+
+_looks_complete = looks_complete  # internal alias (legacy call sites)
 
 
 # Observability: stats of the LAST generate() call, read by run_worker for the run record.
@@ -131,7 +138,7 @@ def generate(proposal: dict) -> str:
     for _ in range(3):  # retry-on-empty at the SOURCE -> kills the wasted consistency/fix call per run
         LAST_GEN["attempts"] += 1
         code = _extract_code(_pi(prompt))
-        if _looks_complete(code):
+        if looks_complete(code):
             break
     LAST_GEN["empty_retries"] = LAST_GEN["attempts"] - 1
     return code  # if still incomplete after 3, the run-loop fix() repairs
@@ -214,5 +221,5 @@ def consistency_check(proposal: dict, code: str) -> tuple:
     else:
         sev = "major" if d.get("consistent") is False else "none"  # tolerate old-shape replies
     corrected = d.get("corrected_code")
-    corrected = corrected.strip() if isinstance(corrected, str) and _looks_complete(corrected) else None
+    corrected = corrected.strip() if isinstance(corrected, str) and looks_complete(corrected) else None
     return sev, str(d.get("issues", ""))[:500], corrected

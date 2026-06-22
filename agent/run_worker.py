@@ -105,28 +105,44 @@ def run_one_from_queue():
     verdict, log = None, ""
     # Observability: per-stage wall-clock + retry counters -> run_log.jsonl ("stages" key)
     stages = {"codegen_s": None, "codegen_attempts": None, "consistency_fix": False,
-              "consistency_severity": None, "sandbox_rejects": 0, "run_attempts": 0,
-              "backtest_s": None, "total_s": None}
+              "consistency_severity": None, "sandbox_rejects": 0, "codegen_empty": 0,
+              "run_attempts": 0, "backtest_s": None, "total_s": None}
     t_cycle = time.time()
     try:
         t0 = time.time()
         code = codegen.generate(prop)
         # Stage 4a severity ladder: only major+ costs a repair; minor deviations are logged and kept
         # (the consistency-fix tail — median 347s vs 211s clean — was dominated by immaterial nits).
-        sev, issues, corrected = codegen.consistency_check(prop, code)
-        stages["consistency_severity"] = sev
-        if sev in codegen.SEVERITY_FIX:
-            print(f"[{AGENT_ID}] thesis<->code mismatch ({sev}): {issues[:120]}; "
-                  + ("corrected in-call" if corrected else "requesting fix..."))
-            stages["consistency_fix"] = True
-            code = corrected or codegen.fix(
-                code, f"THESIS MISMATCH — the code must FAITHFULLY implement the proposal's "
-                      f"economic thesis. Fix these mismatches: {issues}")
-        elif sev == "minor" and issues:
-            print(f"[{AGENT_ID}] consistency minor (kept as-is): {issues[:120]}")
+        # Skip the consistency LLM round-trip on incomplete output — there's no mechanism to grade
+        # in an empty/truncated module; the write-gate loop below repairs it instead.
+        if codegen.looks_complete(code):
+            sev, issues, corrected = codegen.consistency_check(prop, code)
+            stages["consistency_severity"] = sev
+            if sev in codegen.SEVERITY_FIX:
+                print(f"[{AGENT_ID}] thesis<->code mismatch ({sev}): {issues[:120]}; "
+                      + ("corrected in-call" if corrected else "requesting fix..."))
+                stages["consistency_fix"] = True
+                code = corrected or codegen.fix(
+                    code, f"THESIS MISMATCH — the code must FAITHFULLY implement the proposal's "
+                          f"economic thesis. Fix these mismatches: {issues}")
+            elif sev == "minor" and issues:
+                print(f"[{AGENT_ID}] consistency minor (kept as-is): {issues[:120]}")
+        else:
+            stages["consistency_severity"] = "skipped_incomplete"
         stages["codegen_s"] = round(time.time() - t0, 1)
         stages["codegen_attempts"] = codegen.LAST_GEN.get("attempts")
+        mod = ROOT / "strategies" / f"{sid.replace('-', '_')}.py"
         for attempt in range(1, MAX_RETRIES + 1):
+            # GATE 1: never write/run an incomplete module. An empty or truncated file loads with no
+            # `SPEC` attribute -> AttributeError that triage can't diagnose ("no diagnosis returned"),
+            # then loops re-writing the same empty file. Repair instead of writing garbage to disk.
+            if not codegen.looks_complete(code):
+                stages["codegen_empty"] += 1
+                print(f"[{AGENT_ID}] codegen INCOMPLETE ({len(code or '')} chars, no def signal); requesting fix...")
+                code = codegen.fix(code, "INCOMPLETE MODULE: your previous output was empty or missing "
+                                         "`def signal` / a module-level `SPEC`. Output the COMPLETE module "
+                                         "now as ONE ```python code block (imports + def signal + SPEC).")
+                continue
             bad = scan_code(code)
             if bad:
                 print(f"[{AGENT_ID}] sandbox REJECT ({bad}); requesting fix...")
@@ -134,7 +150,6 @@ def run_one_from_queue():
                 code = codegen.fix(code, f"SANDBOX VIOLATION: {bad}. Remove it entirely; the harness "
                                          f"owns ALL I/O and data is fetched via sdk.adapters only.")
                 continue
-            mod = ROOT / "strategies" / f"{sid.replace('-', '_')}.py"
             mod.write_text(code, encoding="utf-8")
             print(f"[{AGENT_ID}] run attempt {attempt}...")
             stages["run_attempts"] = attempt
@@ -162,7 +177,9 @@ def run_one_from_queue():
     elif "TIMEOUT" in log:
         fail_reason = "backtest_timeout"
     elif stages["run_attempts"] == 0:
-        fail_reason = "sandbox_rejected"  # never produced acceptable code
+        # never produced a runnable module: distinguish empty/truncated codegen (the model never
+        # emitted a usable module) from sandbox rejections (it emitted banned I/O) — different fixes.
+        fail_reason = "codegen_empty" if stages.get("codegen_empty") else "sandbox_rejected"
     else:
         fail_reason = "runtime_error"     # ran out of fix-retries on tracebacks
     outcome = {"schema": 2, "ts": datetime.now().isoformat(), "agent": AGENT_ID,

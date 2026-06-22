@@ -1,7 +1,17 @@
 {
   "val_mom_trend_smallcap": {
     "d1_streak": 0,
-    "last_eval": "2026-06-13T09:10:03",
+    "last_eval": "2026-06-19T18:00:06",
+    "last_decay": {
+      "d1": null,
+      "d2": null,
+      "cusum_peak": null,
+      "roll_mean": null
+    }
+  },
+  "amihud_illiq_tranched_v3": {
+    "d1_streak": 0,
+    "last_eval": "2026-06-19T18:00:06",
     "last_decay": {
       "d1": null,
       "d2": null,

@@ -1,0 +1,4 @@
+{
+  "protected": ["sdk/", "vendor/research_integrity", "live_strategies", "config/active_config", ".registry", "FORGE_MODE"],
+  "max_weight": 6
+}

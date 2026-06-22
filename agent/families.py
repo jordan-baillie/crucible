@@ -10,6 +10,16 @@ import re
 _LOW_RISK = ("betting-against", "bab", "low-beta", "low beta", "low-vol", "low vol", "low volatility", "leverage-aversion")
 _PAIRS = [
     ("illiquidity", ("amihud", "illiquidity", "illiquid", "liquidity premium", "liquidity risk")),
+    # crypto-native premia the equity factor-zoo list below misses. Before 'carry' so a
+    # "funding-dispersion ... delta-neutral CARRY" title collapses with its plain-dispersion
+    # siblings instead of scattering (carry by luck / unique catch-all slug per rewording) and
+    # silently defeating the 2/family queue cap. 'issuance' folds the equity AND crypto framings
+    # of the supply/dilution premium (share issuance == token emission == supply inflation).
+    ("funding_dispersion", ("funding dispersion", "funding-dispersion", "funding spread",
+                            "funding-spread", "cross-exchange funding", "cross exchange funding")),
+    ("issuance", ("issuance", "buyback", "repurchas", "dilution", "supply-emission",
+                  "supply emission", "supply-inflation", "supply inflation", "token emission",
+                  "token-emission", "token issuance")),
     ("carry", ("carry", "funding rate", "roll yield")),
     ("pead", ("pead", "post-earnings", "earnings-surprise", "earnings surprise", "sue", "drift")),
     ("skew", ("skew", "lottery", "idiosyncratic vol", "max return")),

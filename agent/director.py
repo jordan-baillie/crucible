@@ -78,8 +78,30 @@ def _theme(prop: dict) -> str:
     return family_bucket(str(prop.get("title", "")) or str(prop.get("premium", "")))
 
 
+def _strip_auto_affixes(stem: str) -> str:
+    """Drop the `auto_` prefix and the `_<agent>_<id>` suffix the worker stamps onto generated
+    strategy filenames, so a recorded experiment's stem can be compared to a PROPOSAL title."""
+    s = re.sub(r"^auto[_-]", "", stem)
+    return re.sub(r"[_-][a-z0-9]{1,8}[_-]\d{1,6}$", "", s)  # _smith3_33634 / -omdtx1-72241
+
+
+def _page_key(path: Path) -> str:
+    """Dedup key for a recorded experiment. Prefer the H1 title (the human-written premium, stable
+    under reruns); fall back to the affix-stripped stem. The OLD `_norm(stem)` keyed on the
+    `auto_<slug>_<agent>_<id>` filename, which can NEVER equal `_norm(proposal_title)` (the `auto_`
+    prefix + id suffix guarantee a miss) — so title dedup against tested experiments was a no-op and
+    failed ideas recurred indefinitely."""
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("# "):
+                return _norm(line[2:])
+    except OSError:
+        pass
+    return _norm(_strip_auto_affixes(path.stem))
+
+
 def _tested_titles() -> set[str]:
-    return {_norm(p.stem) for p in (WIKI / "experiments").glob("*.md")}
+    return {_page_key(p) for p in (WIKI / "experiments").glob("*.md")}
 
 
 def top_up(target: int = TARGET, max_new: int = 4) -> dict:
