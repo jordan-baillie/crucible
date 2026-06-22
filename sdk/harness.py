@@ -157,21 +157,20 @@ def _holding_horizon_bars(trades) -> int:
 
 
 def _commit_holdout_look(strategy_id, cfg_hash, rec, h_pass, h_reasons):
-    """Atomic, locked, FAIL-CLOSED write-once commit of the single holdout look (hardened 2026-06-16).
-    Mirrors the FDR-registry FileLock and re-looks-up INSIDE the lock, so a concurrent smith that
-    claimed the same config_hash while we computed the holdout is caught (write-once preserved under
-    N smiths). Returns (h_pass, h_reasons, raced). A concurrent claim OR an unrecordable append
-    FORCE-FAILS (h_pass=False) -- a holdout that cannot record its one use must never hand out a PASS;
-    that silent degradation is exactly how a zero-false-PASS record erodes invisibly."""
+    """FAIL-CLOSED write-once commit of the single holdout look. Delegates the atomic check-and-append
+    to ri.ledger_commit_once (hardened 2026-06-22): the lock + re-lookup now live IN THE RAIL, so the
+    single-use guarantee no longer depends on this caller remembering to wrap lookup+append — ANY
+    caller (or future project) gets write-once intrinsically. Returns (h_pass, h_reasons, raced). A
+    concurrent claim (prior record returned) OR an unrecordable commit FORCE-FAILS (h_pass=False) --
+    a holdout that cannot record its one use must never hand out a PASS; that silent degradation is
+    exactly how a zero-false-PASS record erodes invisibly."""
     try:
-        with FileLock("holdout-ledger", ttl=120):
-            raced = ri.ledger_lookup(cfg_hash)
-            if raced is not None:
-                return False, list(h_reasons) + [
-                    f"WRITE-ONCE RACE: holdout concurrently claimed for config {cfg_hash} "
-                    f"(look {raced.get('ts', '?')}); this read cannot count as out-of-sample"], True
-            ri.ledger_append(rec)
-            return h_pass, h_reasons, False
+        prior = ri.ledger_commit_once(cfg_hash, rec)
+        if prior is not None:
+            return False, list(h_reasons) + [
+                f"WRITE-ONCE RACE: holdout concurrently claimed for config {cfg_hash} "
+                f"(look {prior.get('ts', '?')}); this read cannot count as out-of-sample"], True
+        return h_pass, h_reasons, False
     except Exception as e:
         print(f"[harness] CRITICAL: holdout ledger commit FAILED for {strategy_id} ({e}) -- "
               f"FAIL-CLOSED (write-once cannot be guaranteed)")

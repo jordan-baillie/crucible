@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 import os
+import sys
 PROJECT = Path(__file__).resolve().parents[2]
 _OVERRIDE_DIR = None  # set via research_integrity.configure(state_dir)
 
@@ -96,6 +97,64 @@ def ledger_append(rec: dict) -> None:
         f.write(json.dumps(rec, default=str) + "\n")
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def _ledger_lock(timeout: float = 120.0):
+    """Self-contained advisory lock co-located with the ledger state dir.
+
+    Makes the single-use guarantee INTRINSIC to the rail instead of dependent on every caller
+    remembering to wrap lookup+append in its own lock (the footgun: a future or other-project
+    caller does lookup() then append() with no lock, the check-then-act races, and a slice the
+    holdout protects gets double-booked). flock on POSIX; non-POSIX degrades to a no-op with a
+    LOUD warning (the re-check below still runs — POSIX is the supported deployment)."""
+    _state_dir().mkdir(parents=True, exist_ok=True)
+    lockf = _state_dir() / "holdout_ledger.lock"
+    try:
+        import fcntl
+        import time
+    except ImportError:
+        sys.stderr.write("[research_integrity] WARNING: no fcntl (non-POSIX) — holdout ledger "
+                         "commit is NOT cross-process race-proof on this host\n")
+        yield
+        return
+    fh = open(lockf, "w")
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"holdout ledger lock busy > {timeout}s — another writer wedged")
+                time.sleep(0.05)
+        yield
+    finally:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        finally:
+            fh.close()
+
+
+def ledger_commit_once(config_hash: str, rec: dict) -> Optional[dict]:
+    """ATOMIC single-use commit — the write-once guarantee made INTRINSIC to the rail.
+
+    Under the ledger lock: RE-look-up `config_hash`, and append `rec` IFF no prior look exists.
+    Returns the PRIOR record if this config was already evaluated on the holdout (the caller MUST
+    treat that as 'holdout already burned' and never count the read as out-of-sample), else None
+    (this call booked the one and only look). Callers must NOT hand-roll lookup()+append(): doing
+    so leaves a check-then-act race that silently double-books the quarantined slice. `config_hash`
+    is forced into the stored record (single source of the key the ledger is indexed by)."""
+    with _ledger_lock():
+        existing = ledger_lookup(config_hash)
+        if existing is not None:
+            return existing
+        ledger_append({**rec, "config_hash": config_hash})
+        return None
+
+
 def holdout_gate(holdout_sharpe: float, degradation_pct: Optional[float],
                  deployment_passed: bool) -> Tuple[bool, List[str]]:
     """Pure gate logic (testable without a backtest)."""
@@ -115,5 +174,5 @@ def holdout_gate(holdout_sharpe: float, degradation_pct: Optional[float],
 # runner producing holdout returns+trades, then calls holdout_gate() (see crucible sdk/harness.py).
 
 __all__ = ["load_holdout_config", "holdout_start_ts", "config_hash", "ledger_lookup",
-           "ledger_append", "holdout_gate",
+           "ledger_append", "ledger_commit_once", "holdout_gate",
            "MIN_HOLDOUT_SHARPE", "MAX_DEGRADATION_PCT"]

@@ -24,7 +24,8 @@ from .adapter import (
     promote_dsr, SCREEN_DSR, PROMOTE_DSR, PROMOTE_DSR_CAP,
 )
 from .deployment import deployment_sanity, expected_positions
-from .holdout import holdout_gate, config_hash, ledger_lookup, ledger_append, MIN_HOLDOUT_SHARPE, MAX_DEGRADATION_PCT
+from .holdout import (holdout_gate, config_hash, ledger_lookup, ledger_append, ledger_commit_once,
+                      MIN_HOLDOUT_SHARPE, MAX_DEGRADATION_PCT)
 from . import registry
 from .registry import family_of, distinct_families, append_run
 
@@ -33,7 +34,7 @@ __all__ = [
     "assemble_bundle", "evaluate", "evaluate_tiers", "daily_returns",
     "promote_dsr", "SCREEN_DSR", "PROMOTE_DSR", "PROMOTE_DSR_CAP",
     "deployment_sanity", "expected_positions",
-    "holdout_gate", "config_hash", "ledger_lookup", "ledger_append",
+    "holdout_gate", "config_hash", "ledger_lookup", "ledger_append", "ledger_commit_once",
     "MIN_HOLDOUT_SHARPE", "MAX_DEGRADATION_PCT",
     "family_of", "distinct_families", "append_run",
 ]

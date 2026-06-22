@@ -232,6 +232,33 @@ def test_write_once_holdout_enforced(tmp_env):
     assert any("WRITE-ONCE" in r for r in v2["holdout_reasons"])
 
 
+def test_ledger_commit_once_is_atomic_and_intrinsic(tmp_env):
+    """Finding-2 regression: the write-once guarantee is INTRINSIC to the rail (ri.ledger_commit_once),
+    not dependent on the caller holding a lock. First commit books the look; a second commit of the
+    SAME config_hash returns the prior record and does NOT append a duplicate; a different hash books
+    independently. (Guards against a future/other-project caller silently re-using a holdout slice.)"""
+    import research_integrity as ri
+
+    h = ri.config_hash("t-commit", {"lookback": 60}, "['test']")
+    rec = {"strategy": "t-commit", "family": "f", "ts": "2026-06-22T00:00:00", "holdout_sharpe": 0.4}
+
+    first = ri.ledger_commit_once(h, rec)
+    assert first is None, "first commit must book the single look (returns None)"
+    assert ri.ledger_lookup(h) is not None, "the look must be recorded"
+
+    second = ri.ledger_commit_once(h, {**rec, "holdout_sharpe": 0.9})
+    assert second is not None, "second commit of same config must return the PRIOR record (burned)"
+    assert second["holdout_sharpe"] == 0.4, "prior record wins; the second look never overwrites"
+
+    # exactly one ledger line for this hash (no duplicate append on the refused second commit)
+    from research_integrity.holdout import LEDGER
+    lines = [l for l in str(LEDGER and open(str(LEDGER)).read()).splitlines() if h in l]
+    assert len(lines) == 1, f"write-once must keep exactly ONE entry per config, got {len(lines)}"
+
+    other = ri.ledger_commit_once(ri.config_hash("t-commit", {"lookback": 90}, "['test']"), rec)
+    assert other is None, "a different frozen config books its own independent single look"
+
+
 def test_parallel_paths_match_serial(tmp_env, monkeypatch):
     """E1 regression: parallel MCPT/grid must produce IDENTICAL verdicts to serial."""
     from sdk import harness

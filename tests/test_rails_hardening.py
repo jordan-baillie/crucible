@@ -1,48 +1,42 @@
-"""Rails hardening (operator 2026-06-16):
-  #1 write-once holdout commit — atomic, locked, FAIL-CLOSED.
+"""Rails hardening:
+  #1 write-once holdout commit — atomic, FAIL-CLOSED, and (2026-06-22) INTRINSIC to the rail:
+     the harness delegates the lock + re-check + append to ri.ledger_commit_once, so the
+     single-use guarantee no longer depends on this caller holding a lock. These tests pin the
+     harness's FAIL-CLOSED MAPPING at that seam; the rail's own atomicity is covered by
+     test_harness_integration::test_ledger_commit_once_is_atomic_and_intrinsic.
   #2 CPCV purge wired to the strategy's holding horizon (not a fixed 1 bar).
-Both are STRICTER-only changes; these tests pin the new guarantees."""
+Both are STRICTER-only changes."""
 import numpy as np
 import pytest
 
 import sdk.harness as H
 
 
-class _NoLock:
-    """No-op stand-in for FileLock so the commit logic is testable without a real cross-process lock."""
-    def __init__(self, *a, **k): pass
-    def __enter__(self): return self
-    def __exit__(self, *a): return False
-
-
 # ───────────────────────── #1 write-once holdout: FAIL-CLOSED + race-safe ─────────────────────────
 def test_holdout_commit_success_records_and_passes(monkeypatch):
-    monkeypatch.setattr(H, "FileLock", _NoLock)
-    appended = []
-    monkeypatch.setattr(H.ri, "ledger_lookup", lambda h: None)
-    monkeypatch.setattr(H.ri, "ledger_append", lambda rec: appended.append(rec))
+    # rail booked the single look (prior is None) -> the PASS stands, the look is recorded.
+    seen = {}
+    def commit_once(h, rec):
+        seen["h"], seen["rec"] = h, rec
+        return None
+    monkeypatch.setattr(H.ri, "ledger_commit_once", commit_once)
     hp, reasons, raced = H._commit_holdout_look("s1", "hash1", {"config_hash": "hash1"}, True, [])
     assert hp is True and reasons == [] and raced is False
-    assert appended == [{"config_hash": "hash1"}]            # the single look IS recorded
+    assert seen == {"h": "hash1", "rec": {"config_hash": "hash1"}}   # the single look IS recorded
 
 
 def test_holdout_commit_FAILS_CLOSED_when_append_errors(monkeypatch):
     # the crux: a holdout that cannot record its single use must NOT hand out a PASS
-    monkeypatch.setattr(H, "FileLock", _NoLock)
-    monkeypatch.setattr(H.ri, "ledger_lookup", lambda h: None)
-    def boom(rec): raise IOError("disk full")
-    monkeypatch.setattr(H.ri, "ledger_append", boom)
+    def boom(h, rec): raise IOError("disk full")
+    monkeypatch.setattr(H.ri, "ledger_commit_once", boom)
     hp, reasons, raced = H._commit_holdout_look("s1", "hash1", {}, True, [])   # was passing
-    assert hp is False                                       # FORCED FAIL (was: WARN + keep PASS)
+    assert hp is False and raced is False                   # FORCED FAIL (was: WARN + keep PASS)
     assert any("UNRECORDABLE" in r for r in reasons)
 
 
 def test_holdout_commit_FAILS_CLOSED_on_concurrent_race(monkeypatch):
-    # a peer claimed the same config_hash while we computed -> re-lookup inside the lock catches it
-    monkeypatch.setattr(H, "FileLock", _NoLock)
-    monkeypatch.setattr(H.ri, "ledger_lookup", lambda h: {"ts": "earlier"})
-    def must_not_append(rec): raise AssertionError("must not append over a concurrent claim")
-    monkeypatch.setattr(H.ri, "ledger_append", must_not_append)
+    # a peer booked the same config_hash first -> the rail returns the PRIOR record -> force FAIL
+    monkeypatch.setattr(H.ri, "ledger_commit_once", lambda h, rec: {"ts": "earlier"})
     hp, reasons, raced = H._commit_holdout_look("s1", "hash1", {}, True, [])
     assert hp is False and raced is True
     assert any("RACE" in r for r in reasons)

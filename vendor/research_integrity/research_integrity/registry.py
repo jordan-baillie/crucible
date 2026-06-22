@@ -53,6 +53,16 @@ def distinct_families(extra: Optional[str] = None, path: Optional[Path] = None) 
 
 
 def append_run(record: dict, path: Optional[Path] = None) -> None:
+    """Append one battery run to the registry.
+
+    CALLER-ATOMICITY CONTRACT: the FDR invariant is `count distinct families -> compute the promote
+    bar -> grade against it -> append THIS family`, and the bar/grade step is caller policy that sits
+    between the count and the append — so (unlike the holdout's self-contained ledger_commit_once) the
+    atomic unit cannot be encapsulated here. The caller MUST hold one lock across distinct_families()
+    + append_run() so N parallel agents can't both read a too-low count, grade against a too-low bar,
+    and then both append (multiplying false-discovery risk). Crucible's harness does this under
+    FileLock("fdr-registry"); any other caller must serialize the same span. The write itself is a
+    single append-mode line (atomic up to PIPE_BUF on POSIX for these small records)."""
     p = path or REGISTRY
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "a") as f:
