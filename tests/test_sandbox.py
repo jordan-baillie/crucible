@@ -23,6 +23,19 @@ MUST_REJECT = [
     "pd.read_html('http://example.com')",
     "Path('x').write_text('data')",
     "__builtins__['open']('x')",
+    # reflection-escape class (closed structurally, not per-instance): each of these reaches a banned
+    # module/builtin WITHOUT naming it, and rlimits don't bound sockets/processes -> must be refused.
+    "().__class__.__bases__[0].__subclasses__()",   # classic sandbox break to object subclasses
+    "x.__class__.__mro__",
+    "f.__globals__['os']",                          # function globals -> already-imported os
+    "f.__code__.co_consts",
+    "().__class__.__dict__",
+    "getattr(obj, '__globals__')",                  # dunder via getattr
+    "getattr(obj, '__' + 'globals__')",             # computed/concatenated name
+    "getattr(obj, name)",                           # non-literal name (dynamic indirection)
+    "getattr(obj, attr_name='__globals__')",        # kwarg name -> no positional literal
+    "import sys\nsys.modules['os'].system('id')",   # sys.modules back door to a banned module
+    "import sys\nm = sys.modules['subprocess']",    # same, without a banned downstream attr
 ]
 
 MUST_ACCEPT = [
@@ -33,6 +46,11 @@ MUST_ACCEPT = [
     "from sdk.adapters import sep_panel, us_universe",
     "mom = panel.pct_change(126)\nsig = np.sign(mom)",
     "result = df.groupby('sector').rank(pct=True)",
+    # benign reflection the 162-strategy corpus actually uses -- must STAY accepted:
+    "attrs = getattr(panel, 'attrs', {})",          # the dominant legit getattr pattern
+    "cols = getattr(df, 'columns', [])",
+    "obs = type(e).__name__",                        # benign introspection (7x in corpus)
+    "doc = (fn.__doc__ or '').strip()",             # benign read-only metadata
 ]
 
 

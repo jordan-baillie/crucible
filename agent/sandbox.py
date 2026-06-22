@@ -6,6 +6,14 @@ the agent CALLS, not reimplements). So we reject any generated code that does pr
 networking (raw), filesystem writes, dynamic eval, deserialization, or broker/capital calls —
 none of which a legitimate signal/data-spec ever needs. Calibrated against existing generated
 strategies (they use only: numpy, pandas, yfinance, sys, warnings, math, sdk.*, tsmom).
+
+Reflection escape is closed as a CLASS, not by instance: dunder ATTRIBUTE access is default-deny
+(small benign allowlist), `getattr/setattr/delattr` are allowed only with a non-dunder string-literal
+name, and `sys.modules` is banned. This shuts `().__class__.__bases__[0].__subclasses__()`,
+`fn.__globals__`, `getattr(o,"__globals__")`, computed-name getattr, and `sys.modules['os']` -- the
+reflection routes that otherwise reach a banned module/builtin without naming it. This matters because
+apply_rlimits() bounds only CPU/file-size (never sockets/processes) and is a no-op off-POSIX, so this
+AST pass is the actual network/process boundary.
 """
 from __future__ import annotations
 
@@ -20,6 +28,12 @@ _BANNED_MODULES = {
     "ccxt", "ib_insync", "ibapi", "alpaca_trade_api", "paramiko", "fabric",
 }
 _BANNED_CALLS = {"eval", "exec", "compile", "__import__", "open", "input", "breakpoint", "globals", "vars"}
+# Reflection builtins: legitimately heavy in strategies (getattr(panel,"attrs",{}), getattr(df,
+# "columns",[])), but ALSO the indirection that reaches a forbidden attribute without writing it
+# literally (getattr(obj,"__globals__"), getattr(obj, computed_name)). Allowed ONLY with a non-dunder
+# STRING-LITERAL name (see scan_code) -- the whole "reach an attribute by indirection" class is then
+# unrepresentable, not just the literal-dunder instance.
+_REFLECTION_CALLS = {"getattr", "setattr", "delattr"}
 # Dangerous attribute/method names (catches os.system even via alias, Path.write_text, etc.)
 _BANNED_ATTRS = {
     "system", "popen", "remove", "unlink", "rmtree", "rmdir", "mkdir", "makedirs",
@@ -29,7 +43,20 @@ _BANNED_ATTRS = {
     # via read_csv bypasses the open()/urllib bans without these:
     "to_csv", "to_parquet", "to_pickle", "to_hdf", "to_excel", "to_sql", "to_feather",
     "read_pickle", "save", "savez", "savetxt",
+    # sys.modules[...] reaches an ALREADY-imported os/subprocess and re-exposes the banned modules
+    # through a back door the import denylist never sees.
+    "modules",
 }
+# Dunder ATTRIBUTE access is default-DENY: `().__class__.__bases__[0].__subclasses__()` and
+# `fn.__globals__` walk out of the AST sandbox entirely (and rlimits cap only CPU/file-size, never
+# sockets/processes -- so the denylist IS the network/process boundary, the only one on non-POSIX).
+# Allowlist = the benign read-only introspection the scanned corpus actually uses (type(e).__name__,
+# fn.__doc__); everything else dunder is refused, so new reflection vectors are closed by default.
+_DUNDER_ATTR_ALLOW = {"__name__", "__module__", "__qualname__", "__doc__"}
+
+
+def _is_dunder(s: str) -> bool:
+    return len(s) >= 5 and s[:2] == "__" and s[-2:] == "__"
 
 
 def scan_code(code: str) -> str | None:
@@ -54,6 +81,14 @@ def scan_code(code: str) -> str | None:
             if name in _BANNED_CALLS:
                 # allow open(...) only if it's NOT a write mode — simplest: ban all open()
                 return f"{name}() call"
+            if name in _REFLECTION_CALLS:
+                # allow ONLY a non-dunder string-literal attribute name; a dunder name OR a computed
+                # (non-constant / concatenated / kwarg) name is the reflection-escape vector.
+                nm = node.args[1] if len(node.args) >= 2 else None
+                if not (isinstance(nm, ast.Constant) and isinstance(nm.value, str)):
+                    return f"{name}() with non-literal attribute name"
+                if _is_dunder(nm.value):
+                    return f"{name}(..., '{nm.value}') dunder-reflection"
             # network fetch via pandas readers (read_csv("https://...") etc.) bypasses the urllib ban
             attr = getattr(fn, "attr", "")
             if attr.startswith("read_") or attr == "read_html":
@@ -64,6 +99,8 @@ def scan_code(code: str) -> str | None:
         elif isinstance(node, ast.Attribute):
             if node.attr in _BANNED_ATTRS:
                 return f".{node.attr}() use"
+            if _is_dunder(node.attr) and node.attr not in _DUNDER_ATTR_ALLOW:
+                return f".{node.attr} dunder-reflection access"
         elif isinstance(node, ast.Name):
             if node.id in ("__builtins__",):
                 return "__builtins__ access"
