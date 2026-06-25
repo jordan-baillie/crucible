@@ -42,3 +42,43 @@ def test_fintwit_opt_out_skips_api(monkeypatch):
     monkeypatch.setattr("agent.x_twitter.x_search", must_not_call)
     monkeypatch.setenv("SCOUT_FINTWIT", "0")
     assert "disabled" in S._fintwit("x")
+
+
+def test_fintwit_sanitizes_query_before_search(monkeypatch):
+    # the X leg must strip -filter:replies (verified live to ZERO results) before hitting the API
+    sent = {}
+
+    def fake_search(query, query_type="Latest", limit=20):
+        sent["query"] = query
+        return ([], None)
+
+    monkeypatch.setattr("agent.x_twitter.x_search", fake_search)
+    monkeypatch.delenv("SCOUT_FINTWIT", raising=False)
+    S._fintwit("($VIX OR $VXX) short vol min_faves:5 lang:en -filter:replies")
+    assert "-filter:replies" not in sent["query"]
+    assert "min_faves:5" in sent["query"] and "$VIX" in sent["query"]    # good operators preserved
+
+
+def test_sanitize_x_query():
+    assert S._sanitize_x_query("$VIX short min_faves:5 -filter:replies") == "$VIX short min_faves:5"
+    assert S._sanitize_x_query("$VIX min_faves:10 lang:en") == "$VIX min_faves:10 lang:en"
+    assert S._sanitize_x_query("  $VIX   -filter:replies   short  ") == "$VIX short"
+    assert S._sanitize_x_query(None) == ""
+
+
+def test_normalize_queries_shapes():
+    N = S._normalize_queries
+    # new {web,x} object: parallel web/x, distinct
+    assert N([{"web": "equity VRP backtest", "x": "$VIX min_faves:5"}], 4) == (
+        ["equity VRP backtest"], ["$VIX min_faves:5"])
+    # legacy plain string -> reused for both legs (back-compat)
+    assert N(["credit spread momentum"], 4) == (["credit spread momentum"], ["credit spread momentum"])
+    # web-only object -> x falls back to web
+    assert N([{"web": "treasury auction"}], 4) == (["treasury auction"], ["treasury auction"])
+    # x-only object -> still usable, web reuses x
+    assert N([{"x": "$HYG credit"}], 4) == (["$HYG credit"], ["$HYG credit"])
+    # garbage -> empty (caller raises LLMError, never a false result)
+    assert N(["", {}, 123, None], 4) == ([], [])
+    # capped to n_queries
+    web, x = N([{"web": f"q{i}", "x": f"x{i}"} for i in range(6)], 2)
+    assert web == ["q0", "q1"] and x == ["x0", "x1"]

@@ -56,6 +56,16 @@ def _research(query):
         return f"(research search failed: {e})", []
 
 
+def _sanitize_x_query(q):
+    """Strip X-search operators that return 0 results on the twitterapi.io backend (verified live
+    2026-06-25: a trailing `-filter:replies` ZEROES the result set; every other operator — cashtags,
+    min_faves:, lang:, OR-groups — works). Belt-and-braces so an LLM that ignores the prompt guidance
+    still gets a working FinTwit query; the gate stack validates ideas regardless of their source."""
+    import re
+    q = re.sub(r"\s*-filter:\S+", "", q or "")     # negated filters zero the set on this backend
+    return re.sub(r"\s+", " ", q).strip()
+
+
 def _fintwit(query, n=12):
     """(text) from the FinTwit layer (twitterapi.io x_search) — practitioner chatter as a THIRD
     grounded source alongside Brave (broad web) and Firecrawl (papers). 'Top' = the most-engaged
@@ -67,7 +77,7 @@ def _fintwit(query, n=12):
         return "(fintwit disabled via SCOUT_FINTWIT)"
     try:
         from agent.x_twitter import x_search, format_tweets
-        tw, err = x_search(query, query_type="Top", limit=n)
+        tw, err = x_search(_sanitize_x_query(query), query_type="Top", limit=n)
         return format_tweets(tw) if not err else f"(fintwit search failed: {err})"
     except Exception as e:
         return f"(fintwit search failed: {e})"
@@ -104,6 +114,30 @@ def _json(text):
     return None
 
 
+def _normalize_queries(raw, n_queries):
+    """Normalize the query-gen output into parallel (web_queries, x_queries).
+
+    The query-gen now emits one object per query: {"web": broad web/paper search string,
+    "x": the SAME premium as an X advanced-search string (cashtags + operators)}. This accepts
+    that shape AND legacy plain strings (back-compat) AND an x-only object — the X leg falls back
+    to the web string whenever no X-native variant is given, so Brave/Firecrawl/FinTwit each get a
+    usable query. Returns ([], []) when nothing is usable (the caller raises LLMError — a parse/
+    timeout failure must never masquerade as a real result).
+    """
+    web, x = [], []
+    for item in (raw or []):
+        if isinstance(item, str) and item.strip():
+            web.append(item.strip()); x.append(item.strip())
+        elif isinstance(item, dict):
+            w = str(item.get("web") or item.get("query") or "").strip()
+            xv = str(item.get("x") or item.get("twitter") or "").strip()
+            if w:
+                web.append(w); x.append(xv or w)       # X-native variant, else reuse web
+            elif xv:                                      # x-only item is still a usable query
+                web.append(xv); x.append(xv)
+    return web[:n_queries], x[:n_queries]
+
+
 def scout(n_queries=4):
     ctx = ("=== OVERVIEW ===\n" + _read("overview.md") +
            "\n\n=== ANTI-PATTERNS (avoid) ===\n" + _read("patterns/META-LESSONS.md")[:2500] +
@@ -118,23 +152,29 @@ def scout(n_queries=4):
                 f"factor/event, one rates/credit, one volatility, one cross-asset/commodity/FX. Do NOT "
                 f"cluster (the wiki is ALREADY heavy on crypto funding-carry and PEAD — deliberately look "
                 f"ELSEWHERE). Prefer edges buildable on the OWNED data above. Avoid anything tested/closed. "
-                f"Return ONLY a JSON array of query strings.")
-    queries = _json(q_raw)
-    if not isinstance(queries, list) or not queries:
+                f"Return ONLY a JSON array of objects, one per query: "
+                f'[{{"web": "broad web/paper search string", '
+                f'"x": "the SAME premium as an X/Twitter advanced-search string. Use a CASHTAG OR-group '
+                f"($VIX OR $VXX), AT MOST 1-2 key terms, and the operators min_faves:5 (signal filter) + "
+                f"lang:en. Keep it LOOSE — a long AND-chain of keywords returns nothing. Do NOT use "
+                f'-filter:replies (it zeroes results). No URLs."}}]. "x" targets FinTwit; "web" targets Brave + papers.')
+    raw = _json(q_raw)
+    queries, x_queries = _normalize_queries(raw, n_queries)
+    if not queries:
         # A truncated/timed-out/garbled query-gen call used to silently fall back to two HARDCODED
         # queries (one of them crypto) — masking a dead LLM call AND re-injecting a de-pinned focus.
         # Fail LOUD instead: the director catches scout() non-fatally, so the night is attributable
         # (logged as 'scout failed') rather than written as a real result built on canned queries.
         raise LLMError(f"scout query-gen returned no parseable queries (output {len(q_raw)} chars)")
-    queries = [q for q in queries if isinstance(q, str) and q.strip()][:n_queries]
     # 2. search — Brave (broad web+news) + Firecrawl research papers + FinTwit practitioner chatter;
     #    deep-dive top open-access papers. Each source is graceful: a failure degrades, never breaks.
     blocks, papers_all = [], []
-    for q in queries:
+    for q, xq in zip(queries, x_queries):
         ptxt, pitems = _research(q)
         papers_all += pitems
         blocks.append(f"### QUERY: {q}\n{_brave(q)}\n\n[ACADEMIC PAPERS — research frontier]\n{ptxt}"
-                      f"\n\n[FINTWIT — practitioner chatter (IDEA source only; validate on owned data)]\n{_fintwit(q)}")
+                      f"\n\n[FINTWIT — practitioner chatter for `{xq}` (IDEA source only; validate on owned data)]"
+                      f"\n{_fintwit(xq)}")
     results = "\n\n".join(blocks) + _deep_dive(papers_all)
     # 3. distill into structured findings + testable candidates (with sources), flag contradictions
     d_raw = _pi(f"{ctx}\n\n=== WEB SEARCH RESULTS ===\n{results}\n\n"
