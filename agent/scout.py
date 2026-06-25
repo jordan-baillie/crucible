@@ -4,8 +4,11 @@ This makes generation OPEN (discovers what others run) instead of only recombini
 Pattern: karpathy LLM-Wiki 'ingest' + a research scout. LLM via the pi CLI; web via Brave (broad
 web+news snippets) AND Firecrawl `categories:[research]` (arXiv/SSRN/ResearchGate academic papers).
 Both feed the SAME wiki-grounded Claude-Max distillation; Firecrawl is additive + graceful (never
-breaks the scout if its key/endpoint is down). ~8 Firecrawl credits/run (search-only)."""
+breaks the scout if its key/endpoint is down) AND twitterapi.io FinTwit search (practitioner chatter; SCOUT_FINTWIT=0 to
+opt out). Each source is graceful: a failure degrades that source, never breaks the scout.
+~8 Firecrawl credits/run + ~12 tweets/query FinTwit (sub-cent)."""
 import json
+import os
 from datetime import date
 from pathlib import Path
 from agent.llm import call as _llm_call, extract_json, LLMError
@@ -51,6 +54,23 @@ def _research(query):
         return format_research(items), items
     except Exception as e:
         return f"(research search failed: {e})", []
+
+
+def _fintwit(query, n=12):
+    """(text) from the FinTwit layer (twitterapi.io x_search) — practitioner chatter as a THIRD
+    grounded source alongside Brave (broad web) and Firecrawl (papers). 'Top' = the most-engaged
+    tweets (higher signal/noise than 'Latest'). IDEA source ONLY: the agent mines reasoning/
+    mechanisms for testable premia; the gate stack on owned data is the sole validator (so there is
+    no point-in-time/survivorship concern). Graceful: never breaks the scout. Opt out: SCOUT_FINTWIT=0
+    (a paid call ~$0.15/1K tweets; ~12 tweets/query here -> sub-cent/run, but kept toggleable)."""
+    if os.environ.get("SCOUT_FINTWIT", "1").strip().lower() in ("0", "false", "no", "off"):
+        return "(fintwit disabled via SCOUT_FINTWIT)"
+    try:
+        from agent.x_twitter import x_search, format_tweets
+        tw, err = x_search(query, query_type="Top", limit=n)
+        return format_tweets(tw) if not err else f"(fintwit search failed: {err})"
+    except Exception as e:
+        return f"(fintwit search failed: {e})"
 
 
 def _deep_dive(papers_all, n=2):
@@ -107,12 +127,14 @@ def scout(n_queries=4):
         # (logged as 'scout failed') rather than written as a real result built on canned queries.
         raise LLMError(f"scout query-gen returned no parseable queries (output {len(q_raw)} chars)")
     queries = [q for q in queries if isinstance(q, str) and q.strip()][:n_queries]
-    # 2. search — Brave (broad web+news) + Firecrawl research papers; deep-dive top open-access papers
+    # 2. search — Brave (broad web+news) + Firecrawl research papers + FinTwit practitioner chatter;
+    #    deep-dive top open-access papers. Each source is graceful: a failure degrades, never breaks.
     blocks, papers_all = [], []
     for q in queries:
         ptxt, pitems = _research(q)
         papers_all += pitems
-        blocks.append(f"### QUERY: {q}\n{_brave(q)}\n\n[ACADEMIC PAPERS — research frontier]\n{ptxt}")
+        blocks.append(f"### QUERY: {q}\n{_brave(q)}\n\n[ACADEMIC PAPERS — research frontier]\n{ptxt}"
+                      f"\n\n[FINTWIT — practitioner chatter (IDEA source only; validate on owned data)]\n{_fintwit(q)}")
     results = "\n\n".join(blocks) + _deep_dive(papers_all)
     # 3. distill into structured findings + testable candidates (with sources), flag contradictions
     d_raw = _pi(f"{ctx}\n\n=== WEB SEARCH RESULTS ===\n{results}\n\n"
