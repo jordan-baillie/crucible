@@ -19,40 +19,42 @@ from agent.propose import propose, mutate as propose_mutate, orthogonal as propo
     crossover as propose_crossover
 from agent.scout import scout
 from agent import elite
+from agent import bandit
 from sdk import queue
 from sdk.locks import FileLock, LockTimeout
 
 TARGET = 4  # keep at least this many items queued
 
-# Arm split (SYNTHESIS_PLAN.md Stage 1c). Fixed until run_log holds >=60 arm-labelled outcomes,
-# then a Thompson bandit may be fitted (parked — data-first). Exploit arms fall back to explore
-# when pool preconditions are unmet (empty pool / <2 families).
-ARM_SPLIT = (("explore", 0.45), ("refine", 0.25), ("orthogonal", 0.15), ("crossover", 0.15))
+# Arm allocation (SYNTHESIS_PLAN.md Stage 1c). The pre-registered FIXED split held until the run_log
+# reached >=60 arm-labelled outcomes; that condition is met, so the allocation is now the data-driven
+# Thompson bandit over arm_reward (agent/bandit.py) with a 25% explore floor. The fixed split below
+# survives ONLY as bandit.FIXED_SPLIT, returned automatically when data < N_MIN (fresh-machine safe).
 _ARMS = {"explore", "refine", "orthogonal", "crossover"}
 
 
-def _pick_arm(rng) -> str:
+def _pick_arm(rng, weights=None) -> str:
     # Operator-directed override (env CRUCIBLE_FORCE_ARM) for a steered run, e.g. an all-`explore`
     # commodities batch. Makes directed runs first-class through the SAME top_up() gate logic
     # (dedup/closed-family/deployability) instead of a parallel seeder that duplicates it. Default
-    # (unset/invalid) = the normal weighted split. Exploit arms still fall back to explore in
-    # _propose_via_arm when the elite pool can't satisfy them.
+    # (unset/invalid) = sample from the bandit's data-driven `weights` (or its fixed-split fallback).
+    # Exploit arms still fall back to explore in _propose_via_arm when the elite pool can't satisfy them.
     forced = os.environ.get("CRUCIBLE_FORCE_ARM", "").strip().lower()
     if forced in _ARMS:
         return forced
+    split = weights or bandit.FIXED_SPLIT
     r, c = rng.random(), 0.0
-    for arm, w in ARM_SPLIT:
+    for arm, w in split:
         c += w
         if r <= c:
             return arm
     return "explore"
 
 
-def _propose_via_arm(rng) -> tuple[dict, str, list[str]]:
+def _propose_via_arm(rng, weights=None) -> tuple[dict, str, list[str]]:
     """THE single arm-selection point. Returns (proposal, arm-actually-used, parent_ids).
     parent_ids = elite-pool ids the exploit arms derived from — the EXPLICIT lineage record
     (research-map graph + retro-analysis); explore has no parents."""
-    arm = _pick_arm(rng)
+    arm = _pick_arm(rng, weights)
     if arm in ("refine", "orthogonal"):
         e = elite.sample(rng)
         if e is None:
@@ -131,10 +133,12 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
         added = 0
         need = target - st.get("queued", 0)
         rng = random.Random()
+        weights = bandit.arm_weights()   # data-driven Thompson allocation, fit ONCE per top-up
+        print(f"[director] arm allocation: {bandit.format_alloc(weights)}")
         for _ in range(min(need, max_new) * 3):  # extra tries to find DIVERSE ideas
             if added >= min(need, max_new):
                 break
-            prop, arm, parent_ids = _propose_via_arm(rng)
+            prop, arm, parent_ids = _propose_via_arm(rng, weights)
             if "error" in prop:
                 continue
             key, th = _norm(prop.get("title", "")), _theme(prop)

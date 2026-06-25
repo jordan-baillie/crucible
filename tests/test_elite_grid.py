@@ -238,8 +238,11 @@ def test_propose_via_arm_parent_ids_lineage(pool, monkeypatch):
 
 
 def test_arm_reward_shape():
+    # single-sourced in agent.bandit; run_worker re-exports it. MONOTONE in gate-progress (2026-06-25):
+    # a no-edge SCREEN_FAIL (0.1) must rank below a cleared-screen run (0.3) that failed a later gate.
     from agent.run_worker import _arm_reward
     assert _arm_reward(None) == 0.0
-    assert _arm_reward({"stage1_pass": False}) == 0.25
-    assert _arm_reward({"stage1_pass": True, "dsr": 0.8}) == 1.3
-    assert _arm_reward({"stage1_pass": True, "dsr": 0.2, "PASSED_ALL_GATES": True}) == 2.0
+    assert _arm_reward({"tier": "SCREEN_FAIL"}) == 0.1                              # no in-sample edge
+    assert _arm_reward({"tier": "FAIL", "search_sharpe": 0.9}) == 0.3                # had an edge, failed later
+    assert _arm_reward({"stage1_pass": True, "dsr": 0.8, "search_sharpe": 1.0}) == 1.3
+    assert _arm_reward({"stage1_pass": True, "dsr": 0.2, "search_sharpe": 1.0, "PASSED_ALL_GATES": True}) == 2.0
