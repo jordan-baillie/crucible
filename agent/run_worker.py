@@ -133,15 +133,17 @@ def run_one_from_queue():
         stages["codegen_attempts"] = codegen.LAST_GEN.get("attempts")
         mod = ROOT / "strategies" / f"{sid.replace('-', '_')}.py"
         for attempt in range(1, MAX_RETRIES + 1):
-            # GATE 1: never write/run an incomplete module. An empty or truncated file loads with no
-            # `SPEC` attribute -> AttributeError that triage can't diagnose ("no diagnosis returned"),
-            # then loops re-writing the same empty file. Repair instead of writing garbage to disk.
-            if not codegen.looks_complete(code):
+            # GATE 1: never write/run a module that is empty, won't COMPILE, or has no module-level
+            # `SPEC`. These used to reach the sandbox subprocess and surface as opaque casualties
+            # (SyntaxError from chain-of-thought prose written into the .py; AttributeError on m.SPEC)
+            # that triage couldn't diagnose, looping on re-writes. validate_module() catches all three
+            # deterministically IN-PROCESS and returns a precise reason to repair against.
+            reason = codegen.validate_module(code)
+            if reason:
                 stages["codegen_empty"] += 1
-                print(f"[{AGENT_ID}] codegen INCOMPLETE ({len(code or '')} chars, no def signal); requesting fix...")
-                code = codegen.fix(code, "INCOMPLETE MODULE: your previous output was empty or missing "
-                                         "`def signal` / a module-level `SPEC`. Output the COMPLETE module "
-                                         "now as ONE ```python code block (imports + def signal + SPEC).")
+                print(f"[{AGENT_ID}] codegen INVALID ({len(code or '')} chars): {reason[:100]}; requesting fix...")
+                code = codegen.fix(code, f"INVALID MODULE: {reason} Output the COMPLETE corrected module "
+                                         f"now as ONE ```python code block (imports + def signal + module-level SPEC).")
                 continue
             bad = scan_code(code)
             if bad:

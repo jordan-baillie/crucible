@@ -1,6 +1,6 @@
 """Signal codegen: the agent writes a complete StrategySpec module from its proposal,
 with a bounded fix-retry loop (reads the traceback, repairs the code). LLM via the pi CLI."""
-import json, re
+import ast, json, re
 from pathlib import Path
 from agent.llm import call as _llm_call, extract_json
 
@@ -108,18 +108,82 @@ Be economical and correct. OWNED/FREE data only (see DATA_CATALOG.md). The harne
 _pi = _llm_call  # plumbing consolidated in agent.llm
 
 
+def _public_adapter_names() -> list:
+    """Every public sdk.adapters function name, derived from the code (cannot drift)."""
+    import inspect
+    from sdk import adapters as _ad
+    return sorted(n for n, f in vars(_ad).items()
+                  if inspect.isfunction(f) and not n.startswith("_")
+                  and f.__module__ == _ad.__name__ and n != "list_adapters")
+
+
+def _build_contract(template: str) -> str:
+    """Single-source the adapter whitelist into the CONTRACT from sdk.adapters so it can NEVER
+    drift again. The 2026-06 crypto-adapter omission (binance_*, coinmetrics_*, bybit_funding,
+    deribit_dvol existed in sdk.adapters but not in the hardcoded whitelist) made Opus REFUSE
+    ~33% of crypto codegens ('I can't write this honestly — no crypto data') and
+    hallucinate-then-crash the rest (the runtime_error spike). Fail-OPEN to the static template
+    if sdk.adapters can't be introspected — never crash a smith over a contract-render error."""
+    try:
+        from sdk.adapters import list_adapters
+        whitelist = "  from sdk.adapters import " + ", ".join(_public_adapter_names())
+        contract = template.replace(
+            "  from sdk.adapters import sep_panel, us_universe, sf1, yf_panel, fred_series, trend_returns, inv_vol_position",
+            whitelist)
+        return (contract + "\n\n=== COMPLETE ADAPTER INVENTORY (authoritative, code-derived — "
+                "every adapter below EXISTS and is importable; crypto/futures/macro/SEC included) ===\n"
+                + list_adapters())
+    except Exception:
+        return template  # fail-open: prose guidance still lists the core kit
+
+
+# Render the whitelist from the code ONCE at import. Single source of truth = sdk.adapters.
+CONTRACT = _build_contract(CONTRACT)
+
+
 def _extract_code(text: str) -> str:
     # take the LARGEST fenced block (Opus sometimes emits a skeleton block first, then the real one)
     blocks = re.findall(r"```python\s*(.*?)```", text, re.DOTALL) or re.findall(r"```\s*(.*?)```", text, re.DOTALL)
     return (max(blocks, key=len) if blocks else (text or "")).strip()
 
 
+def validate_module(code: str) -> str | None:
+    """Deterministic pre-flight for a generated strategy module. Returns None if it is safe to
+    write+run, else a PRECISE, fixable reason (routed to codegen.fix() like any other gate).
+
+    Runs in-process in microseconds and is the single source of truth for "is this code safe to
+    write+run". It closes the two malformed-module casualty CLASSES that the old substring
+    heuristic ('def signal' in code) let slip through to the EXPENSIVE sandbox subprocess, where
+    they surfaced as opaque casualties triage could not diagnose:
+      1. SyntaxError — e.g. the generator wrote its chain-of-thought TRANSCRIPT into the .py
+         ('I'll start by...' -> unterminated string literal at line 1).
+      2. no module-level `SPEC` — the harness entrypoint is run_experiment(m.SPEC); without it the
+         import raises AttributeError ('module ... has no attribute SPEC') AFTER a wasted run.
+    The old docstring CLAIMED to prevent the m.SPEC AttributeError but never actually checked for
+    SPEC — this makes the gate deliver on that contract.
+    """
+    c = code or ""
+    if "def signal" not in c or len(c) < 300:
+        return "INCOMPLETE: empty/truncated module (need imports + `def signal` + module-level `SPEC`)"
+    try:
+        tree = ast.parse(c)
+    except SyntaxError as e:
+        return (f"SyntaxError: {e.msg} (line {e.lineno}). Output ONLY a complete python MODULE in one "
+                f"```python block — never chain-of-thought / prose / tool-call text in the .py.")
+    has_spec = any(
+        (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "SPEC" for t in n.targets))
+        or (isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and n.target.id == "SPEC")
+        for n in tree.body)
+    if not has_spec:
+        return ("no module-level `SPEC = StrategySpec(...)` — the harness runs run_experiment(m.SPEC); "
+                "a SPEC built inside a function or a different name will not load.")
+    return None
+
+
 def looks_complete(code: str) -> bool:
-    """True only for a runnable module body. The single source of truth for "is this code
-    safe to write+run": run_worker GATES the strategy-file write on this so an empty/truncated
-    module can never reach disk (loading it raises an opaque AttributeError on `m.SPEC` that
-    triage cannot diagnose). Keep the threshold here, not duplicated at call sites."""
-    return "def signal" in (code or "") and len(code or "") > 300
+    """Bool view of validate_module() for legacy call sites (run_worker GATE-1 consistency-skip,
+    codegen self-checks). True iff the module compiles AND exposes a module-level SPEC."""
+    return validate_module(code) is None
 
 
 _looks_complete = looks_complete  # internal alias (legacy call sites)
@@ -129,18 +193,45 @@ _looks_complete = looks_complete  # internal alias (legacy call sites)
 LAST_GEN = {"attempts": 0, "empty_retries": 0}
 
 
+INCOMPLETE_LOG = Path(__file__).resolve().parent.parent / "logs" / "codegen_incomplete.jsonl"
+
+
+def _log_incomplete(proposal: dict, raw: str, code: str, attempts: int) -> None:
+    """Persist the RAW model output whenever codegen returns an incomplete module after its
+    retries. Previously this output was DISCARDED, so the 2026-06 refusal spike could only be
+    diagnosed by live reproduction. Now triage / the morning report can read the actual cause
+    (refusal text vs. truncation vs. wrong format) from logs/codegen_incomplete.jsonl. Logging
+    must NEVER break codegen — fail silent."""
+    try:
+        from datetime import datetime
+        rec = {"ts": datetime.now().isoformat(timespec="seconds"),
+               "title": str(proposal.get("title", "?"))[:120],
+               "attempts": attempts, "raw_len": len(raw or ""), "code_len": len(code or ""),
+               "raw_head": (raw or "")[:2000]}
+        INCOMPLETE_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with INCOMPLETE_LOG.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec) + "\n")
+    except Exception:
+        pass
+
+
 def generate(proposal: dict) -> str:
     prompt = (f"{CONTRACT}\n\n=== PROPOSAL TO IMPLEMENT ===\n{json.dumps(proposal, indent=2)}\n\n"
               f"Write the COMPLETE module now as ONE ```python code block with the full implementation "
               f"(imports + def signal + any helpers). Do NOT emit a skeleton, outline, or partial block.")
-    code = ""
+    code, raw = "", ""
     LAST_GEN["attempts"] = 0
     for _ in range(3):  # retry-on-empty at the SOURCE -> kills the wasted consistency/fix call per run
         LAST_GEN["attempts"] += 1
-        code = _extract_code(_pi(prompt))
+        raw = _pi(prompt)
+        code = _extract_code(raw)
         if looks_complete(code):
             break
     LAST_GEN["empty_retries"] = LAST_GEN["attempts"] - 1
+    if not looks_complete(code):
+        # capture WHY (refusal? truncation? wrong format?) so the next regression is diagnosable
+        # from the log, not a live repro. The run-loop fix() still repairs from here.
+        _log_incomplete(proposal, raw, code, LAST_GEN["attempts"])
     return code  # if still incomplete after 3, the run-loop fix() repairs
 
 

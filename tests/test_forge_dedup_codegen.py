@@ -20,7 +20,19 @@ def test_looks_complete_rejects_empty_and_truncated():
     assert codegen.looks_complete("") is False
     assert codegen.looks_complete("def signal(panel):\n    pass") is False  # < 300 chars
     assert codegen.looks_complete("# no signal here\n" + "x = 1\n" * 100) is False
-    assert codegen.looks_complete("def signal(panel):\n    return panel\n" + "# pad\n" * 100) is True
+    # has `def signal` + length but NO module-level SPEC: the harness runs run_experiment(m.SPEC),
+    # so a SPEC-less module is NOT complete (it used to slip through to an opaque AttributeError
+    # casualty). The gate now delivers on its own docstring contract.
+    assert codegen.looks_complete("def signal(panel):\n    return panel\n" + "# pad\n" * 100) is False
+    # non-compiling (e.g. the generator wrote chain-of-thought prose into the .py) -> rejected
+    assert codegen.looks_complete("I'll start by writing def signal but I'm not sure\n" + "x\n" * 200) is False
+    # complete = compiles AND has `def signal` AND a module-level SPEC
+    complete = "def signal(panel):\n    return panel\nSPEC = object()\n" + "# pad\n" * 100
+    assert codegen.looks_complete(complete) is True
+    # validate_module() returns the precise reason (None when valid) the fix-loop repairs against
+    assert codegen.validate_module(complete) is None
+    assert "SPEC" in codegen.validate_module("def signal(panel):\n    return panel\n" + "# pad\n" * 100)
+    assert "SyntaxError" in codegen.validate_module("def signal(:\n  bad(\n" + "# pad\n" * 100)
 
 
 def test_empty_codegen_never_writes_or_runs(monkeypatch, tmp_path):

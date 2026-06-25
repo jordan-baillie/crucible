@@ -1,6 +1,8 @@
 """Tested data adapters the agent's generated signal code composes (reliability > reinvention).
 All no-incremental-cost / already-owned sources. The agent is told to use THESE, not raw downloads."""
 import json, os, sys, warnings
+import http.client, socket, ssl, time as _time
+import urllib.error, urllib.parse, urllib.request
 warnings.filterwarnings("ignore")
 import numpy as np, pandas as pd
 
@@ -235,6 +237,14 @@ def sep_panel(tickers=None, start="2000-01-01", end=None, field="closeadj") -> p
     (closeadj=adjusted close | closeunadj | close | volume).
     PREFER THIS over yf_panel for US stocks (yfinance has survivorship bias — a wiki anti-pattern).
     tickers=None loads ALL (~16k, heavy) — pass a list (e.g. from us_universe())."""
+    # Footgun guard (casualty 2026-06-18): a smith called sep_panel(tickers, START, "closeadj") —
+    # passing the FIELD name into the positional `end` (date) slot -> pd.Timestamp("closeadj") raised
+    # an opaque DateParseError the fix-loop could not diagnose. Turn it into an actionable error.
+    for _slot, _val in (("start", start), ("end", end)):
+        if isinstance(_val, str) and _val in ("closeadj", "closeunadj", "close", "volume"):
+            raise ValueError(
+                f"sep_panel: '{_val}' is a FIELD name, not a date — you passed it as the positional "
+                f"`{_slot}`. Call it as a keyword: sep_panel(tickers, start, field='{_val}').")
     path = _sep_cache()
     # E3: push date bounds into the parquet scan (row-group pruning) instead of filtering in pandas
     filt = [("date", ">=", pd.Timestamp(start))]
@@ -416,18 +426,99 @@ def fut_curve(root, n_contracts=2, min_volume=1, field=None):
 
 # ── Free public sources unblocking queued families (COT / CBOE / funding / auctions) ──
 
+# --- DNS-poisoning workaround (2026-06-23) ------------------------------------------------------
+# This host's resolver (systemd-resolved upstream, and 8.8.8.8) SINKHOLES the crypto exchanges
+# (Binance fapi+api, Bybit) to dead Indonesian ISP IPs -> TCP:443 times out -> every Binance/Bybit
+# adapter hangs ~120s then returns empty, silently killing crypto strategies in the forge. The REAL
+# CloudFront/AWS IPs are fully reachable (verified HTTPS 200). So we resolve via Cloudflare DNS-over-
+# HTTPS (to 1.1.1.1 BY IP -> no DNS dependency) and pin the TLS socket to the real IP while keeping
+# SNI = the real hostname so the cert still validates. Self-contained in the adapter: no host/systemd
+# change, survives reboots, and CloudFront IP rotation is handled by the per-process DoH cache TTL.
+# Structural, not a host-list band-aid: ANY host that resolves to a known sinkhole IP (or whose
+# direct fetch fails) automatically falls back to DoH, so a newly-poisoned domain self-heals.
+_SINKHOLE_IPS = frozenset({"182.23.79.195", "139.255.196.196"})
+_DOH_HOSTS = frozenset({"fapi.binance.com", "api.binance.com", "api.bybit.com"})  # known-poisoned: skip the doomed direct attempt
+_DOH_TTL = 1800  # seconds; CloudFront IPs rotate, so don't pin one forever
+_doh_cache: dict = {}  # host -> (ip, expiry_epoch)
+
+
+def _doh_resolve(host: str):
+    """Resolve A record for `host` via Cloudflare DoH (1.1.1.1 by IP), skipping sinkhole answers.
+    Returns a real IP string or None. Cached per-process with a TTL."""
+    hit = _doh_cache.get(host)
+    if hit and hit[1] > _time.time():
+        return hit[0]
+    try:
+        req = urllib.request.Request(f"https://1.1.1.1/dns-query?name={host}&type=A",
+                                     headers={"accept": "application/dns-json"})
+        ans = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        ips = [a["data"] for a in ans.get("Answer", [])
+               if a.get("type") == 1 and a.get("data") not in _SINKHOLE_IPS]
+        if ips:
+            _doh_cache[host] = (ips[0], _time.time() + _DOH_TTL)
+            return ips[0]
+    except Exception:
+        return None
+    return None
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS to a pinned IP while keeping SNI + cert hostname = the real host, so a DoH-resolved
+    exchange IP still validates against the host's certificate."""
+    def __init__(self, host, ip, **kw):
+        super().__init__(host, **kw)
+        self._pin_ip = ip
+
+    def connect(self):
+        self.sock = socket.create_connection((self._pin_ip, self.port), self.timeout, self.source_address)
+        if self._tunnel_host:
+            self._tunnel()
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+def _doh_get(url, headers, timeout) -> bytes:
+    """GET `url` resolving its host via DoH and pinning the TLS connection to the real IP.
+    Raises urllib.error.HTTPError on a 4xx/5xx (a real server response, not a network block)."""
+    p = urllib.parse.urlparse(url)
+    ip = _doh_resolve(p.hostname)
+    if not ip:
+        raise OSError(f"DoH could not resolve {p.hostname}")
+    conn = _PinnedHTTPSConnection(p.hostname, ip, port=(p.port or 443),
+                                  timeout=timeout, context=ssl.create_default_context())
+    try:
+        conn.request("GET", p.path + (("?" + p.query) if p.query else ""), headers=headers)
+        r = conn.getresponse()
+        body = r.read()
+        if r.status >= 400:
+            raise urllib.error.HTTPError(url, r.status, r.reason, r.headers, None)
+        return body
+    finally:
+        conn.close()
+
+
 def _http_get(url, timeout=60, retries=3):
-    """GET with a browser-ish User-Agent (CFTC 403s python-urllib) + simple retry (Binance
-    public API is transiently flaky). Returns bytes."""
-    import time as _t, urllib.request
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (research; crucible)"})
+    """GET with a browser-ish User-Agent (CFTC 403s python-urllib) + simple retry (public crypto
+    APIs are transiently flaky). Returns bytes. Auto-routes DNS-poisoned exchange hosts through
+    Cloudflare DoH + a pinned TLS connection (see _doh_resolve); any host whose direct fetch fails
+    also gets one DoH retry, so a freshly-sinkholed domain self-heals."""
+    host = urllib.parse.urlparse(url).hostname
+    headers = {"User-Agent": "Mozilla/5.0 (research; crucible)"}
+    use_doh = host in _DOH_HOSTS
     for attempt in range(retries):
         try:
-            return urllib.request.urlopen(req, timeout=timeout).read()
+            if use_doh:
+                return _doh_get(url, headers, timeout)
+            return urllib.request.urlopen(
+                urllib.request.Request(url, headers=headers), timeout=timeout).read()
+        except urllib.error.HTTPError:
+            raise  # real 4xx/5xx from the server — a retry/DoH won't change it
         except Exception:
+            # transient OR sinkhole: flip to DoH for the remaining attempts if it can resolve a real IP
+            if not use_doh and _doh_resolve(host):
+                use_doh = True
             if attempt == retries - 1:
                 raise
-            _t.sleep(5 * (attempt + 1))
+            _time.sleep(3 * (attempt + 1))
 
 # CFTC contract market codes for our futures roots (CME/NYMEX/COMEX/CBOT contracts —
 # verified 2026-06-12 against deacot2024; deliberately NOT the ICE lookalikes).
@@ -587,7 +678,7 @@ def binance_klines(symbols=CRYPTO_MAJORS, market="perp", start="2019-01-01", int
     if isinstance(symbols, str):  # footgun class: 'BTCUSDT' -> per-character iteration
         symbols = [symbols]
     base = _KLINE_PERP if market == "perp" else _KLINE_SPOT
-    cache = _day_cache("klines", [market, interval, *symbols])
+    cache = _day_cache("klines", [market, interval, start, *symbols])  # start in key: a short-range call must NOT poison a deep-history one (truncated-cache bug, 2026-06-23)
     if cache and os.path.exists(cache):
         return pd.read_parquet(cache)
     start_ms = int(pd.Timestamp(start).timestamp() * 1000)
@@ -641,7 +732,7 @@ def bybit_funding(symbols=("BTCUSDT", "ETHUSDT"), start="2020-01-01") -> pd.Data
     import time as _t
     if isinstance(symbols, str):  # footgun class: 'BTCUSDT' -> per-character iteration
         symbols = [symbols]
-    cache = _day_cache("bybit_funding", [*symbols])
+    cache = _day_cache("bybit_funding", [start, *symbols])  # start in key (truncated-cache bug, 2026-06-23)
     if cache and os.path.exists(cache):
         return pd.read_parquet(cache)
     start_ms = int(pd.Timestamp(start).timestamp() * 1000)
@@ -709,7 +800,7 @@ def coinmetrics_metrics(assets=CM_COMMUNITY_MAJORS, metrics=("PriceUSD", "AdrAct
         assets = [assets]
     if isinstance(metrics, str):
         metrics = [metrics]
-    cache = _day_cache("cm_community", [frequency, *sorted(assets), *sorted(metrics)])
+    cache = _day_cache("cm_community", [frequency, start, *sorted(assets), *sorted(metrics)])  # start in key (truncated-cache bug, 2026-06-23)
     if cache and os.path.exists(cache):
         return pd.read_parquet(cache)
     base = (f"{_CM_COMMUNITY}?assets={','.join(assets)}&metrics={','.join(metrics)}"

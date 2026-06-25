@@ -1,9 +1,32 @@
-"""Stage 4 codegen hygiene: consistency severity ladder (4a) + error-class memory (4b)."""
+"""Stage 4 codegen hygiene: consistency severity ladder (4a) + error-class memory (4b)
++ contract<->adapters drift guard (2026-06-23)."""
+import inspect
 import json
 
 import pytest
 
 from agent import codegen
+
+
+# ---------- contract <-> adapters drift guard (2026-06-23) ----------
+
+def test_contract_lists_every_public_adapter():
+    """The CONTRACT's adapter whitelist is single-sourced from sdk.adapters so it can never again
+    omit an adapter that EXISTS. Regression that motivated this: the crypto adapters (binance_klines,
+    binance_universe, coinmetrics_metrics, bybit_funding, deribit_dvol) lived in sdk.adapters but were
+    missing from the hardcoded whitelist, so Opus refused ~33% of crypto codegens ('I can't write
+    this honestly — no crypto data') and hallucinated-then-crashed the rest. This test fails the
+    moment the rendered contract drifts from the code."""
+    from sdk import adapters
+    names = [n for n, f in vars(adapters).items()
+             if inspect.isfunction(f) and not n.startswith("_")
+             and f.__module__ == adapters.__name__ and n != "list_adapters"]
+    missing = [n for n in names if n not in codegen.CONTRACT]
+    assert not missing, f"CONTRACT omits adapters that exist in sdk.adapters: {missing}"
+    # the exact adapters whose omission caused the 2026-06 refusal/runtime_error spike
+    for crypto in ("binance_klines", "binance_universe", "coinmetrics_metrics",
+                   "bybit_funding", "deribit_dvol", "funding_rates"):
+        assert crypto in codegen.CONTRACT, f"{crypto} missing from rendered CONTRACT"
 
 
 # ---------- 4a: severity ladder ----------
@@ -15,7 +38,9 @@ def test_severity_parsing(monkeypatch):
         return replies["next"]
 
     monkeypatch.setattr(codegen, "_pi", fake_pi)
-    good_code = "def signal(panel):\n    pass\n" + "# pad\n" * 100
+    # a genuinely complete module compiles, has `def signal` AND a module-level SPEC (looks_complete
+    # gates the corrected-code acceptance on exactly this).
+    good_code = "def signal(panel):\n    pass\nSPEC = object()\n" + "# pad\n" * 100
 
     # minor -> no repair flag, no corrected code
     replies["next"] = json.dumps({"severity": "minor", "issues": "slightly different vol window",
