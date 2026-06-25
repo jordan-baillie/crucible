@@ -179,21 +179,52 @@ def _commit_holdout_look(strategy_id, cfg_hash, rec, h_pass, h_reasons):
             f"preserve the single-use guarantee"], False
 
 
+_PRICE_TOKENS = ("px", "close", "closeadj", "price", "prices", "adj_close")
+
+
+def _price_fields_composite(columns):
+    """Single source of truth for COMPOSITE price-field detection — used by BOTH _price_matrix and
+    _permute_panel_prices so the two can never disagree about which columns are prices. For a
+    MultiIndex column index whose field names are composite (e.g. 'eq_px','etf_px','eq_close') and so
+    miss the exact-key match, return (level, [price_field,...]): fields whose underscore-delimited
+    tokens include a price token. 'eq_dvol'/'volume'/'bvps' do NOT match. Returns (None, []) if none."""
+    toks = set(_PRICE_TOKENS)
+    for lvl in (0, 1):
+        vals = list(dict.fromkeys(columns.get_level_values(lvl)))
+        pf = [v for v in vals if any(t in toks for t in str(v).lower().split("_"))]
+        if pf:
+            return lvl, pf
+    return None, []
+
+
 def _price_matrix(panel):
     """Best-effort (dates x assets) CLOSE-price matrix for the long-only benchmark + the breadth/regime/
     beta gates; None if not a price panel. Handles BOTH MultiIndex orientations: (field, asset) with the
     price-key at level 0, AND (asset, field) — the binance_klines layout: symbol at level 0, 'close' at
     level 1 — extracting the close cross-section (columns = assets). This is what lets the crypto gates
-    (breadth/regime/beta) read a crypto klines panel instead of seeing it as 'not a price panel'."""
-    keys = ("px", "close", "closeadj", "price", "prices", "adj_close")
+    (breadth/regime/beta) read a crypto klines panel instead of seeing it as 'not a price panel'.
+    COMPOSITE-field panels (e.g. a two-leg book packed as ('eq_px'|'eq_dvol'|'etf_px', ticker)) are
+    handled by a fallback that concatenates every price field's cross-section — they previously missed
+    the exact-key match and silently disabled four gates."""
+    keys = _PRICE_TOKENS
     try:
         if isinstance(panel, pd.DataFrame) and isinstance(panel.columns, pd.MultiIndex):
-            for lvl in (0, 1):                       # (field,asset) -> lvl0 ; (asset,field) klines -> lvl1
+            for lvl in (0, 1):                       # (1) EXACT key match (UNCHANGED behaviour)
                 vals = set(panel.columns.get_level_values(lvl))
                 for key in keys:
                     if key in vals:
                         m = panel.xs(key, axis=1, level=lvl)
                         return m if m.shape[1] >= 2 else None
+            # (2) COMPOSITE-name fallback — only reached when (1) matched nothing, so no panel that
+            # already works changes behaviour. Concat every price field's cross-section into one
+            # (dates x assets) proxy with PLAIN ticker columns (the breadth gate maps ledger tickers
+            # -> px.columns, so we must NOT prefix), dropping cross-field duplicate tickers (keep 1st).
+            lvl, pf = _price_fields_composite(panel.columns)
+            if pf:
+                mats = [panel.xs(f, axis=1, level=lvl) for f in pf]
+                out = pd.concat(mats, axis=1)
+                out = out.loc[:, ~out.columns.duplicated()]
+                return out if out.shape[1] >= 2 else None
             return None
         if isinstance(panel, pd.DataFrame) and panel.shape[1] >= 5:
             return panel
@@ -208,6 +239,10 @@ REGIME_VOL_LB = 200          # frozen: trailing realized-vol lookback (days)
 REGIME_MIN_OBS = 120         # frozen: evaluability guard — labeled obs required PER HALF
 REGIME_COVERAGE_FLOOR = 0.80 # frozen Part B: ledger entry_regime coverage below this = not evaluated
 REGIME_COVERAGE_DEMOTES_FROM = "2026-06-26"  # frozen Part B phase-in end (14 days post-implementation)
+REGIME_COVERAGE_WARMUP_FROM = "2026-06-25"   # amendment (prereg-regime-coverage-warmup-amendment.md):
+                                             # from this date, un-labelable warmup trades are excluded from
+                                             # the Part-B coverage denominator (consistent with Part A's
+                                             # exclusion of NaN-input days). Floor/labeller/numerator UNCHANGED.
 
 
 def _regime_split(search_ret, price_mx):
@@ -241,18 +276,54 @@ def _regime_split(search_ret, price_mx):
         return out
 
 
-def _regime_coverage(search_trades) -> dict:
+def _regime_label_warmup_end(price_mx):
+    """Pre-reg amendment (prereg-regime-coverage-warmup-amendment.md §12): first date the CONTRACT
+    labeller (signal_kit.market_regime — the SAME function trades_from_weights stamps with) can emit
+    a non-'?' regime for this panel. Trades entering before it are un-labelable BY CONSTRUCTION and
+    are excluded from the Part-B coverage denominator, exactly as Part A excludes NaN-input days.
+    Returns 'YYYY-MM-DD', or None (no recognised price panel / no defined label) -> the conservative
+    legacy full-denominator fallback (a panel-less strategy is NOT forgiven)."""
+    if price_mx is None:
+        return None
+    try:
+        from sdk.signal_kit import market_regime
+        reg = market_regime(price_mx.pct_change())
+        known = reg.index[np.asarray(reg.values) != "?"]
+        if len(known) == 0:
+            return None
+        return pd.Timestamp(known[0]).strftime("%Y-%m-%d")
+    except Exception:
+        return None
+
+
+def _regime_coverage(search_trades, warmup_end=None) -> dict:
     """Part B: fraction of search-window trades carrying a real entry_regime stamp. All-'?' ledgers
     made the three ledger regime gates pass VACUOUSLY (verified 2026-06-12) — below the floor they
-    are recorded as not_evaluated, and from REGIME_COVERAGE_DEMOTES_FROM low coverage demotes."""
-    n = len(search_trades or [])
+    are recorded as not_evaluated, and from REGIME_COVERAGE_DEMOTES_FROM low coverage demotes.
+
+    warmup_end (amendment §13, prereg-regime-coverage-warmup-amendment.md): when set, trades whose
+    entry_date precedes it are un-labelable warmup and EXCLUDED from the denominator. None -> legacy
+    full-denominator. The vacuous-pass catch is preserved either way: an all-'?' ledger is all-'?'
+    post-warmup too (0% coverage -> still demoted), and any '?' trade entering on/after warmup_end is
+    still counted (a strategy cannot game coverage by stamping only late trades)."""
+    trades = search_trades or []
+    if warmup_end is not None:
+        we = str(warmup_end)
+        evaluable = [t for t in trades if str(t.get("entry_date", "")) >= we]
+    else:
+        evaluable = list(trades)
+    excluded = len(trades) - len(evaluable)
+    n = len(evaluable)
     if n == 0:
-        return {"coverage": None, "ok": False, "note": "no search-window trades"}
-    stamped = sum(1 for t in search_trades if str(t.get("entry_regime", "?")) != "?")
+        return {"coverage": None, "ok": False, "warmup_excluded": excluded,
+                "note": ("all search-window trades fall in the regime warmup (un-labelable)"
+                         if trades else "no search-window trades")}
+    stamped = sum(1 for t in evaluable if str(t.get("entry_regime", "?")) != "?")
     cov = stamped / n
     ok = cov >= REGIME_COVERAGE_FLOOR
-    return {"coverage": round(cov, 3), "ok": ok,
-            "note": None if ok else (f"regime gates NOT EVALUATED: only {cov:.0%} of trades carry a "
+    scope = "post-warmup trades" if warmup_end is not None else "trades"
+    return {"coverage": round(cov, 3), "ok": ok, "warmup_excluded": excluded,
+            "note": None if ok else (f"regime gates NOT EVALUATED: only {cov:.0%} of {scope} carry a "
                                      f"real entry_regime (floor {REGIME_COVERAGE_FLOOR:.0%})")}
 
 
@@ -353,9 +424,31 @@ def _permute_panel_prices(panel, rng):
     px_p = px_p.where(px.notna())
     if isinstance(panel.columns, pd.MultiIndex):
         lvl0 = list(dict.fromkeys(panel.columns.get_level_values(0)))
-        price_key = next(k for k in ("px", "close", "closeadj", "price", "prices", "adj_close") if k in lvl0)
-        blocks = {k: (px_p if k == price_key else panel[k]) for k in lvl0}
-        new = pd.concat(blocks, axis=1)
+        exact = next((k for k in _PRICE_TOKENS if k in lvl0), None)
+        if exact is not None:                                    # (UNCHANGED) single exact price block
+            blocks = {k: (px_p if k == exact else panel[k]) for k in lvl0}
+            new = pd.concat(blocks, axis=1)
+        else:
+            # COMPOSITE-name fallback (e.g. 'eq_px'+'etf_px'): permute each price block's columns from
+            # px_p (plain tickers spanning all price fields); keep non-price blocks ('eq_dvol') intact.
+            # Single-sourced with _price_matrix via _price_fields_composite. Only level-0 composite
+            # layouts are rebuildable here; anything else -> skip MCPT (None), as before this fix.
+            lvl, pf = _price_fields_composite(panel.columns)
+            if lvl != 0 or not pf:
+                return None
+            pf_set = set(pf)
+            blocks = {}
+            for k in lvl0:
+                if k in pf_set:
+                    orig = panel[k]
+                    blk = orig.copy()
+                    cols = [c for c in orig.columns if c in px_p.columns]
+                    if cols:
+                        blk.loc[:, cols] = px_p[cols].values
+                    blocks[k] = blk
+                else:
+                    blocks[k] = panel[k]
+            new = pd.concat(blocks, axis=1)
     else:
         new = px_p
     new.attrs = dict(panel.attrs)
@@ -693,7 +786,13 @@ def _gc_regime_fragile(ctx: GateContext) -> CheckResult:
 
 
 def _gc_regime_unstamped(ctx: GateContext) -> CheckResult:
-    rc = _regime_coverage(ctx.search_trades)
+    # Amendment (prereg-regime-coverage-warmup-amendment.md §14): from REGIME_COVERAGE_WARMUP_FROM,
+    # exclude un-labelable warmup trades from the coverage denominator; before it, legacy behaviour.
+    # Date-gated with the same convention CheckResult.active uses, so the change applies only to runs
+    # on/after the amendment's frozen activation date.
+    warmup_end = (_regime_label_warmup_end(ctx.price_matrix)
+                  if pd.Timestamp.now().strftime("%Y-%m-%d") >= REGIME_COVERAGE_WARMUP_FROM else None)
+    rc = _regime_coverage(ctx.search_trades, warmup_end=warmup_end)
     ok = bool(rc.get("ok"))
     return CheckResult(
         name="regime_unstamped", failure_mode=4, evaluated=True,

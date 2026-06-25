@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sdk.harness import (_regime_split, _regime_coverage, REGIME_MIN_OBS,
-                         REGIME_VOL_LB, REGIME_COVERAGE_FLOOR)
+from sdk.harness import (_regime_split, _regime_coverage, _regime_label_warmup_end,
+                         REGIME_MIN_OBS, REGIME_VOL_LB, REGIME_COVERAGE_FLOOR)
 
 
 def _panel(n_days=1600, n_assets=20, vol_regimes=True, seed=0):
@@ -79,3 +79,63 @@ def test_coverage_floor():
     c = _regime_coverage(bad)
     assert c["ok"] is False and c["coverage"] == 0.3 and "NOT EVALUATED" in c["note"]
     assert _regime_coverage([])["ok"] is False
+
+
+# --- amendment 2026-06-25 (prereg-regime-coverage-warmup-amendment.md): warmup exclusion ---
+
+def test_coverage_excludes_unlabelable_warmup():
+    """Trades entering before the labeller can emit a regime are un-labelable by construction and
+    excluded from the denominator — a strategy that stamps every POST-warmup trade scores 100%,
+    not a false sub-floor (the smith4_65266 case: warmup '?' cohort dragged coverage to 78%)."""
+    warm = "2015-04-01"
+    pre = [{"entry_date": "2015-01-05", "entry_regime": "?"}] * 30          # unavoidable warmup '?'
+    post = [{"entry_date": "2015-06-01", "entry_regime": "bull_calm"}] * 70  # all stamped
+    led = pre + post
+    legacy = _regime_coverage(led)                       # old denominator: 70/100 = 0.70 -> FAIL
+    assert legacy["ok"] is False and legacy["coverage"] == 0.7
+    fixed = _regime_coverage(led, warmup_end=warm)       # warmup excluded: 70/70 = 1.0 -> PASS
+    assert fixed["ok"] is True and fixed["coverage"] == 1.0 and fixed["warmup_excluded"] == 30
+
+
+def test_warmup_exclusion_preserves_vacuous_catch():
+    """An all-'?' ledger (strategy never stamped regimes) STILL fails even with warmup exclusion —
+    post-warmup trades are all '?' too. The 2026-06-12 vacuous-pass hole stays closed."""
+    warm = "2015-04-01"
+    led = ([{"entry_date": "2015-01-05", "entry_regime": "?"}] * 20
+           + [{"entry_date": "2015-06-01", "entry_regime": "?"}] * 80)
+    c = _regime_coverage(led, warmup_end=warm)
+    assert c["ok"] is False and c["coverage"] == 0.0
+
+
+def test_warmup_exclusion_does_not_forgive_post_warmup_holes():
+    """Only the provable warmup window is forgiven; '?' trades entering on/after the boundary are
+    still counted, so coverage cannot be gamed by stamping late trades only."""
+    warm = "2015-04-01"
+    led = ([{"entry_date": "2015-01-05", "entry_regime": "?"}] * 10          # warmup (excluded)
+           + [{"entry_date": "2015-06-01", "entry_regime": "?"}] * 40         # real holes (counted)
+           + [{"entry_date": "2015-06-01", "entry_regime": "bull_calm"}] * 60)
+    c = _regime_coverage(led, warmup_end=warm)
+    assert c["ok"] is False and c["coverage"] == 0.6        # 60/100 post-warmup, NOT forgiven
+
+
+def test_warmup_end_none_is_legacy_full_denominator():
+    """No recognised panel -> warmup_end None -> conservative legacy behaviour (not forgiven)."""
+    led = ([{"entry_date": "2015-01-05", "entry_regime": "?"}] * 22
+           + [{"entry_date": "2015-06-01", "entry_regime": "bull_calm"}] * 78)
+    assert _regime_coverage(led, warmup_end=None)["coverage"] == 0.78
+    assert _regime_coverage(led)["coverage"] == 0.78       # default == None
+
+
+def test_regime_label_warmup_end_matches_kit_labeller():
+    """The boundary equals signal_kit.market_regime's first non-'?' date for the same panel, and is
+    None when there is no panel."""
+    from sdk.signal_kit import market_regime
+    rng = np.random.default_rng(0)
+    idx = pd.bdate_range("2015-01-02", periods=300)
+    px = pd.DataFrame(100 * np.exp(np.cumsum(rng.normal(0, 0.01, (300, 10)), axis=0)),
+                      index=idx, columns=[f"A{i}" for i in range(10)])
+    boundary = _regime_label_warmup_end(px)
+    reg = market_regime(px.pct_change())
+    expected = pd.Timestamp(reg.index[np.asarray(reg.values) != "?"][0]).strftime("%Y-%m-%d")
+    assert boundary == expected
+    assert _regime_label_warmup_end(None) is None

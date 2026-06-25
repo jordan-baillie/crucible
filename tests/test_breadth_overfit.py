@@ -119,3 +119,51 @@ def test_breadth_check_not_evaluated_on_losing_or_thin():
     from sdk.harness import _gc_breadth_overfit
     res = _gc_breadth_overfit(_ctx(n_names=40, rho=0.15, drift=-0.001, seed=2))  # negative drift -> IR<=0
     assert res.evaluated is False and res.passed is None    # no positive edge -> nothing to flag
+
+
+# --- composite-field panel recognition (two-leg books e.g. ('eq_px'|'eq_dvol'|'etf_px', ticker)).
+#     Previously missed the exact-key match -> price_matrix None -> regime/beta/breadth/long-only and
+#     the regime-coverage warmup amendment all silently disabled. ---
+
+def _composite_panel(n_eq=8, n_days=300, seed=0):
+    idx = pd.bdate_range(end="2026-06-01", periods=n_days)
+    rng = np.random.default_rng(seed)
+    eq = pd.DataFrame(100 * np.exp(np.cumsum(rng.normal(0, 0.01, (n_days, n_eq)), 0)),
+                      index=idx, columns=[f"EQ{i}" for i in range(n_eq)])
+    etf = pd.DataFrame(100 * np.exp(np.cumsum(rng.normal(0, 0.008, (n_days, 5)), 0)),
+                       index=idx, columns=["SPY", "EFA", "TLT", "GLD", "DBC"])
+    return pd.concat({"eq_px": eq, "eq_dvol": eq * 1e6, "etf_px": etf}, axis=1), eq, etf
+
+
+def test_price_matrix_recognises_composite_field_panel():
+    """eq_px/etf_px composite field names (the smith4_65266 two-leg panel) are now recognised: the
+    proxy spans BOTH price legs with PLAIN ticker columns (so breadth's ledger->column map works),
+    and the dollar-volume block is excluded (not a price field)."""
+    from sdk.harness import _price_matrix
+    panel, eq, etf = _composite_panel()
+    pm = _price_matrix(panel)
+    assert pm is not None
+    assert set(eq.columns) <= set(pm.columns) and set(etf.columns) <= set(pm.columns)
+    assert pm.shape[1] == eq.shape[1] + etf.shape[1]      # 13: dvol's 8 cols NOT double-counted
+
+
+def test_permute_panel_prices_handles_composite_panel():
+    """With the panel recognised, the MCPT permuter must rebuild the SAME MultiIndex structure
+    (price blocks shuffled, volume block byte-intact) instead of raising StopIteration."""
+    from sdk.harness import _permute_panel_prices
+    panel, eq, _ = _composite_panel(seed=1)
+    dvol = panel["eq_dvol"]
+    out = _permute_panel_prices(panel, np.random.default_rng(2))
+    assert out is not None
+    assert list(dict.fromkeys(out.columns.get_level_values(0))) == ["eq_px", "eq_dvol", "etf_px"]
+    pd.testing.assert_frame_equal(out["eq_dvol"], dvol)   # non-price block untouched
+    assert out["eq_px"].shape == eq.shape and not out["eq_px"].equals(eq)  # price block permuted
+
+
+def test_warmup_boundary_now_computable_for_composite_panel():
+    """Ties the price-matrix fix to the regime-coverage warmup amendment: _regime_label_warmup_end
+    goes from None (unrecognised panel -> conservative legacy denominator) to a real boundary date."""
+    from sdk.harness import _price_matrix, _regime_label_warmup_end
+    panel, _, _ = _composite_panel(seed=3)
+    assert _regime_label_warmup_end(_price_matrix(panel)) is not None
+    assert _regime_label_warmup_end(None) is None        # no panel -> still None (legacy fallback)
