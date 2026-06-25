@@ -8,7 +8,7 @@ breaks the scout if its key/endpoint is down). ~8 Firecrawl credits/run (search-
 import json
 from datetime import date
 from pathlib import Path
-from agent.llm import call as _llm_call, extract_json
+from agent.llm import call as _llm_call, extract_json, LLMError
 
 from crucible_paths import WIKI  # central config
 
@@ -16,6 +16,19 @@ from crucible_paths import WIKI  # central config
 def _read(p):
     f = WIKI / p
     return f.read_text(encoding="utf-8") if f.exists() else ""
+
+
+def _read_tail(p, max_chars: int):
+    """Bounded read (newest-last) so the scout prompt does not grow without limit with project
+    history. A 31KB+ index.md bloats the distill prompt toward the call timeout; a timed-out call
+    salvages TRUNCATED JSON -> unparseable -> (historically) a SILENT 0-candidate night. Capping the
+    tested-list removes that trigger. Mirrors propose._read_tail (same problem, same fix)."""
+    t = _read(p)
+    if len(t) <= max_chars:
+        return t
+    cut = t[-max_chars:]
+    nl = cut.find("\n")
+    return f"[... older entries omitted ({len(t) - max_chars} chars) ...]\n" + (cut[nl + 1:] if nl >= 0 else cut)
 
 
 def _pi(prompt):
@@ -75,7 +88,7 @@ def scout(n_queries=4):
     ctx = ("=== OVERVIEW ===\n" + _read("overview.md") +
            "\n\n=== ANTI-PATTERNS (avoid) ===\n" + _read("patterns/META-LESSONS.md")[:2500] +
            "\n\n=== DATA WE OWN (prefer ideas buildable on these) ===\n" + _read("DATA_CATALOG.md") +
-           "\n\n=== ALREADY TESTED / SURFACED ===\n" + _read("index.md"))
+           "\n\n=== ALREADY TESTED / SURFACED (recent; older omitted) ===\n" + _read_tail("index.md", 12_000))
     # 1. generate targeted search queries aimed at wiki gaps / untested promising directions
     q_raw = _pi(f"{ctx}\n\nYou are a quant research scout. Based on the wiki's UNTESTED promising "
                 f"directions and gaps, produce {n_queries} web-search queries that would surface NEW, "
@@ -86,9 +99,14 @@ def scout(n_queries=4):
                 f"cluster (the wiki is ALREADY heavy on crypto funding-carry and PEAD — deliberately look "
                 f"ELSEWHERE). Prefer edges buildable on the OWNED data above. Avoid anything tested/closed. "
                 f"Return ONLY a JSON array of query strings.")
-    queries = _json(q_raw) or ["systematic risk premia retail backtest 2025 carry trend vol",
-                               "crypto delta neutral funding basis strategy 2025"]
-    queries = queries[:n_queries]
+    queries = _json(q_raw)
+    if not isinstance(queries, list) or not queries:
+        # A truncated/timed-out/garbled query-gen call used to silently fall back to two HARDCODED
+        # queries (one of them crypto) — masking a dead LLM call AND re-injecting a de-pinned focus.
+        # Fail LOUD instead: the director catches scout() non-fatally, so the night is attributable
+        # (logged as 'scout failed') rather than written as a real result built on canned queries.
+        raise LLMError(f"scout query-gen returned no parseable queries (output {len(q_raw)} chars)")
+    queries = [q for q in queries if isinstance(q, str) and q.strip()][:n_queries]
     # 2. search — Brave (broad web+news) + Firecrawl research papers; deep-dive top open-access papers
     blocks, papers_all = [], []
     for q in queries:
@@ -106,7 +124,16 @@ def scout(n_queries=4):
                 f'"contradictions": ["any finding that contradicts a wiki claim"]}}\n'
                 f'Surface DIVERSE candidates across DIFFERENT premia/markets (NOT multiple variants of one '
                 f'theme); PREFER ideas buildable on the OWNED data above (mark data_feasible accordingly).')
-    findings = _json(d_raw) or {"summary": d_raw[:600], "candidates": [], "premia_updates": [], "contradictions": []}
+    findings = _json(d_raw)
+    if not isinstance(findings, dict) or "candidates" not in findings:
+        # PARSE/TIMEOUT FAILURE: truncated JSON won't parse -> _json returns None. The historical
+        # code coerced that to {"candidates": []} and _ingest logged '0 candidates' — indistinguishable
+        # from a genuine empty result. The 2026-06-22 STORM of identical 0-candidate logs was exactly
+        # this (the pi->summon auth migration breaking every call). NEVER record a failed distill as a
+        # real null: raise so it is attributable and writes NO misleading 0-candidate ingest. A GENUINE
+        # empty result (valid JSON with candidates: []) still falls through and ingests honestly.
+        raise LLMError(f"scout distill returned unparseable output (len {len(d_raw)}); "
+                       f"refusing to log a false 0-candidate night")
     _ingest(queries, findings)
     return findings
 
