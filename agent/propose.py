@@ -172,27 +172,37 @@ def _parent_block(elite: dict, idx: int | None = None) -> str:
     enriched with our gate-stack verdict summary — they only had an IC number)."""
     s = elite.get("summary") or {}
     head = f"### PARENT {idx}" if idx else "ELITE STRATEGY"
+    blocker = s.get("blocker")
     return (f"{head} (fitness/DSR {elite.get('fitness')})\n"
             f"Verdict summary: holdout_sharpe={s.get('holdout_sharpe')} search_sharpe={s.get('search_sharpe')} "
-            f"n_trades={s.get('n_trades')} scope={s.get('scope')} tier={s.get('tier')}\n"
-            f"Proposal:\n{json.dumps(elite.get('proposal'), indent=2)}")
+            f"pbo={s.get('pbo')} n_trades={s.get('n_trades')} scope={s.get('scope')} tier={s.get('tier')}\n"
+            + (f"BLOCKER TO FIX (what stopped this parent passing): {blocker}\n" if blocker else "")
+            + f"Proposal:\n{json.dumps(elite.get('proposal'), indent=2)}")
 
 
 def mutate(elite: dict) -> dict:
     """REFINE an elite: ONE targeted change to make it more robust / generalise better — keep what
     worked, fix what's fragile. NOT a fresh idea. Same JSON proposal format. (Evolutionary exploit step.)"""
     ctx = _ctx()
+    s = elite.get("summary") or {}
+    blocker = s.get("blocker")
+    # Lead with the ACTUAL wall so the mutation attacks it instead of wandering (audit 2026-06-25:
+    # 48% of near-misses die on PBO and the loop never knew). When a blocker is known the mutation
+    # MUST target it; otherwise fall back to general robustness.
+    directive = (f"This parent did NOT pass. THE WALL TO BREAK (your mutation MUST target this, not a "
+                 f"cosmetic tweak): {blocker}\n\n" if blocker else "")
     prompt = f"""{ctx}
 
-ELITE STRATEGY to EVOLVE (fitness/DSR {elite.get('fitness')}):
+ELITE STRATEGY to EVOLVE (fitness/DSR {elite.get('fitness')}, holdout_sharpe={s.get('holdout_sharpe')}, pbo={s.get('pbo')}):
 {json.dumps(elite.get('proposal'), indent=2)}
 
-Propose ONE targeted MUTATION to make it MORE ROBUST or GENERALISE better — e.g. a different/broader universe,
-a complementary leg, a cleaner/lower-turnover construction, a regime filter, a cost-hardening. Keep what worked;
-fix the fragile part. {_DEPLOYABILITY} Mutating TOWARD deployability (e.g. long-only/index-hedged
-variant) is itself a high-value mutation. This is an EVOLUTION of THIS strategy, NOT a new idea, and must still
-obey the anti-patterns and use owned/free data. Return ONLY the SAME JSON proposal object ({_CONTRACT_FIELDS})
-with the mutation applied (title should note it's a variant)."""
+{directive}Propose ONE targeted MUTATION to make it MORE ROBUST or GENERALISE better — if a WALL is named above,
+the mutation must DIRECTLY reduce it; otherwise: a different/broader universe, a complementary leg, a cleaner/
+lower-turnover construction, a regime filter, a cost-hardening. Keep what worked; fix the fragile part.
+{_DEPLOYABILITY} Mutating TOWARD deployability (e.g. long-only/index-hedged variant) is itself a high-value
+mutation. This is an EVOLUTION of THIS strategy, NOT a new idea, and must still obey the anti-patterns and use
+owned/free data. Return ONLY the SAME JSON proposal object ({_CONTRACT_FIELDS}) with the mutation applied
+(title should note it's a variant)."""
     obj = extract_json(_llm_call(prompt))
     return obj if obj is not None else {"error": "mutate_parse_failed"}
 

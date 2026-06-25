@@ -92,6 +92,55 @@ def _fitness(v: dict) -> float:
     return fit if math.isfinite(fit) else 0.0  # NaN/inf DSR was bypassing the MIN_FIT guard (nan<=0.5 is False) -> reject
 
 
+def _primary_blocker(v: dict) -> str | None:
+    """The DOMINANT reason a holdout-passing near-miss did not pass — i.e. what the refine arm must
+    ATTACK. Audit 2026-06-25: PBO>=0.5 (overfit config selection) is the #1 near-miss blocker (48%),
+    yet the loop was PBO-BLIND (fitness=DSR, PBO unstored, refine prompt never told the kill reason).
+    The one PASS (amihud tranched_v3) cleared PBO 0.76->0.33 via overlapping tranches — so when PBO
+    is the wall the mutation must reduce config-selection overfit, not wander. Returns None if it
+    passed everything (no blocker) or the cause is unknown."""
+    if not v or v.get("PASSED_ALL_GATES"):
+        return None
+    pbo = v.get("pbo")
+    if gate_metric(v, "beta_confound", "beta_confound"):
+        return ("beta-confound: the edge is long-only universe beta, not selection alpha — make it "
+                "market-neutral and beat the equal-weight benchmark")
+    if isinstance(pbo, (int, float)) and pbo >= 0.5:
+        return (f"PBO {pbo:.2f} — OVERFIT CONFIG SELECTION (the in-sample-best config does not generalise "
+                f"across CSCV splits; DSR already clears the bar). REDUCE config-selection overfit: "
+                f"overlapping monthly tranches (the one PASS, amihud tranched_v3, cut PBO 0.76->0.33 this "
+                f"way), FEWER free parameters, ensemble ACROSS the grid instead of picking the single best "
+                f"config, wider robust no-trade bands")
+    if v.get("holdout_pass") is False:
+        return f"holdout rejected: {'; '.join(v.get('holdout_reasons') or [])[:140]}"
+    if v.get("deployment_passed") is False:
+        return ("deployment-sanity: too concentrated / too few names (a 1-2 name mirage) — diversify the "
+                "book across sectors and names")
+    dsr, bar = v.get("dsr"), v.get("promote_bar")
+    if isinstance(dsr, (int, float)) and isinstance(bar, (int, float)) and dsr < bar:
+        return (f"DSR {dsr:.3f} < FDR bar {bar:.3f} — multiple-testing burden: needs a cleaner, stronger "
+                f"edge with FEWER search trials, not another grid variant")
+    if v.get("mcpt_pass") is False:
+        return ("MCPT artifact: permuted data scores >= real — the construction manufactures the edge; "
+                "redesign so a structureless permutation kills it")
+    return None
+
+
+def _pbo_of(item: dict) -> float:
+    """PBO of a stored pool item; unknown PBO ranks WORST (1.0) so it is never preferred on a tie."""
+    p = (item.get("summary") or {}).get("pbo")
+    return float(p) if isinstance(p, (int, float)) else 1.0
+
+
+def _supersedes(new: dict, old: dict) -> bool:
+    """Does `new` deserve the cell over `old`? Higher fitness wins; on a (DSR-saturated) TIE the
+    LOWER-PBO occupant wins — it is genuinely closer to a pass. Single source of the cell-collision
+    rule, used by both _grid() and _record_locked() so they can never diverge."""
+    if new["fitness"] != old["fitness"]:
+        return new["fitness"] > old["fitness"]
+    return _pbo_of(new) < _pbo_of(old)
+
+
 def _load() -> list:
     return [json.loads(l) for l in POOL.read_text(encoding="utf-8").splitlines() if l.strip()] if POOL.exists() else []
 
@@ -104,7 +153,7 @@ def _grid(items: list, closed: set | None = None) -> dict:
         if _family(it) in closed:
             continue
         c = cell_of(it)
-        if c not in g or it["fitness"] > g[c]["fitness"]:
+        if c not in g or _supersedes({**it, "cell": c}, g[c]):
             g[c] = {**it, "cell": c}
     return g
 
@@ -125,13 +174,17 @@ def record(outcome: dict) -> None:
 def _record_locked(outcome: dict, fit: float, v: dict) -> None:
     item = {"id": outcome.get("id"), "fitness": round(fit, 4), "title": outcome.get("title"),
             "proposal": outcome.get("proposal"), "ts": outcome.get("ts"),
-            # small verdict summary: feeds cell binning + the refine/orthogonal/crossover prompts
-            "summary": {k: v.get(k) for k in
-                        ("dsr", "holdout_sharpe", "holdout_pass", "search_sharpe", "n_trades", "scope", "tier")}}
+            # small verdict summary: feeds cell binning + the refine/orthogonal/crossover prompts.
+            # pbo + blocker are stored so refine can ATTACK the actual wall (audit 2026-06-25: PBO is
+            # the #1 near-miss blocker but was invisible to the loop).
+            "summary": {**{k: v.get(k) for k in
+                           ("dsr", "pbo", "holdout_sharpe", "holdout_pass", "search_sharpe", "n_trades",
+                            "scope", "tier")},
+                        "blocker": _primary_blocker(v)}}
     item["cell"] = cell_of(item)
     g = _grid(_load())
-    if item["cell"] in g and g[item["cell"]]["fitness"] >= item["fitness"]:
-        return  # cell already holds an equal-or-better elite
+    if item["cell"] in g and not _supersedes(item, g[item["cell"]]):
+        return  # cell already holds an equal-or-better elite (higher fitness, or tie + lower PBO)
     g[item["cell"]] = item
     items = sorted(g.values(), key=lambda x: x["fitness"], reverse=True)[:MAX_CELLS]
     POOL.parent.mkdir(parents=True, exist_ok=True)

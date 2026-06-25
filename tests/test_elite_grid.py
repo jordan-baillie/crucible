@@ -87,6 +87,36 @@ def test_holdout_passed_strategy_is_admitted_and_persists_flag(pool):
     assert items[0]["summary"].get("holdout_pass") is True  # persisted so future pool-cleans can see it
 
 
+def test_pbo_and_blocker_are_stored_for_refine(pool):
+    """Audit 2026-06-25: the loop was PBO-blind. PBO + the primary blocker must be persisted in the
+    summary so the refine prompt can ATTACK the actual wall (PBO is the #1 near-miss blocker)."""
+    elite, p, _ = pool
+    o = _outcome("Amihud illiquidity PBO-blocked", "US small-cap equities", 0.9999)
+    o["verdict"].update(holdout_pass=True, pbo=0.81)         # holdout passed, but overfit config
+    elite.record(o)
+    s = json.loads(p.read_text(encoding="utf-8").splitlines()[0])["summary"]
+    assert s.get("pbo") == 0.81
+    assert "PBO" in s["blocker"] and "tranche" in s["blocker"].lower()   # steers toward the proven fix
+
+
+def test_lower_pbo_supersedes_on_dsr_tie(pool):
+    """DSR is saturated (~0.9999) across a family, so on a fitness TIE keep the LOWER-PBO occupant —
+    it is genuinely closer to a pass. Without this, an arbitrary high-PBO incumbent blocks the cell."""
+    elite, p, _ = pool
+    hi = _outcome("Amihud high-PBO", "US small-cap equities", 0.9999)
+    hi["verdict"].update(holdout_pass=True, pbo=0.80)
+    lo = _outcome("Amihud low-PBO variant", "US small-cap equities", 0.9999)
+    lo["verdict"].update(holdout_pass=True, pbo=0.30)
+    elite.record(hi)
+    elite.record(lo)                                        # same fitness, lower PBO -> must displace
+    items = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()]
+    assert len(items) == 1 and items[0]["summary"]["pbo"] == 0.30
+    # and the reverse order must NOT let the high-PBO one displace the low-PBO incumbent
+    elite.record(hi)
+    items = [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()]
+    assert len(items) == 1 and items[0]["summary"]["pbo"] == 0.30
+
+
 def test_nan_fitness_rejected(pool):
     """NaN DSR used to BYPASS the MIN_FIT guard (nan <= 0.5 is False) and pollute the pool."""
     elite, p, _ = pool
