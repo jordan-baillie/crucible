@@ -69,7 +69,17 @@ def _iwm_regimes(dates: list[str]) -> dict[str, str]:
     return out
 
 
-MODELED_COST_BPS = {"val_mom_trend_smallcap": 8.0}  # from each frozen design's cost spec
+# Per-book frozen modeled cost = the design's PER-UNIT-TURNOVER (~per-side) cost the backtest edge
+# was net-of. CANONICAL SOURCE OF TRUTH (atlas/execution/gates.py mirrors this; kept in sync by
+# atlas tests/execution/test_modeled_cost_sync.py). Each value is verbatim from the frozen design.
+MODELED_COST_BPS = {
+    "val_mom_trend_smallcap": 8.0,    # auto_value_momentum_complementary_combination_smith2_96154.py:45
+    "amihud_illiq_tranched_v3": 7.5,  # auto_amihud_illiquidity_premium_deployable_sh_smith1_99153.py:166
+                                      # asymmetric legs (long 30/side, short 7.5, hedge 2): a fill-based
+                                      # SELL is ambiguous (long-exit vs short-entry), so register the
+                                      # CONSERVATIVE tightest leg (7.5 -> bar 15); position-aware
+                                      # per-leg G6 is the proper refinement (board task).
+}
 SLIPPAGE_MULT = 2.0
 MAX_BROKER_ERR = 0.01
 LOOKBACK_DAYS = 60  # G6/G7 evidence window (prereg-g6g7-consolidation 2026-06-13; adopted from atlas)
