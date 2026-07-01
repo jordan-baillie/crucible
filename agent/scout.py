@@ -138,11 +138,62 @@ def _normalize_queries(raw, n_queries):
     return web[:n_queries], x[:n_queries]
 
 
+def _diversity_brief() -> str:
+    """Generator-only steer: the already-spent / already-live family-space (agent.joint_state.brief).
+    Graceful — returns '' when there is nothing to steer against (fresh machine / deploy disabled)."""
+    try:
+        from agent.joint_state import brief
+        return brief()
+    except Exception:
+        return ""
+
+
+def _agentic_enabled() -> bool:
+    return os.environ.get("SCOUT_AGENTIC", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _scout_agentic(ctx: str, n_queries: int) -> dict:
+    """Stage 3: ONE agentic Fable-5 turn that DRIVES the crucible-research MCP itself (search -> READ
+    the source -> cross-check vs the wiki's tested/closed families) and returns the SAME distill JSON
+    as the tool-less path. This is the mcp/README 'future agentic X-gather scout'. Fail-loud preserved:
+    an unparseable/empty result (incl. a Fable-5 refusal -> empty completion) RAISES rather than logging
+    a false 0-candidate night (the 2026-06-22 lesson)."""
+    from agent.config import scout_cmd
+    prompt = (f"{ctx}\n\nYou are a quant research scout with LIVE research tools: web_search (broad web), "
+              f"research_search (arXiv/SSRN/ResearchGate papers), scrape_url/extract_url (READ a specific "
+              f"page/paper), x_search (FinTwit practitioner chatter — IDEA source only). "
+              f"Find up to {n_queries} NEW, specific, backtestable edges real practitioners or recent "
+              f"research actually use. DIVERSIFY HARD across DISTINCT premia AND markets; prefer edges "
+              f"buildable on the OWNED data above; AVOID anything already tested/closed/deployed. "
+              f"USE the tools to CHASE and VERIFY each mechanism — read the actual source and confirm it "
+              f"is genuinely distinct from the wiki's tested/closed families — BEFORE proposing it. "
+              f"When done, return ONLY the distill JSON (no prose):\n"
+              f'{{"summary": "2-3 sentences on what is new/relevant", '
+              f'"candidates": [{{"title":"...","premium":"...","market":"...","why_promising":"...",'
+              f'"data_feasible":"free/owned?","not_already_tested":"...","source":"..."}}], '
+              f'"premia_updates": ["short factual updates with source"], '
+              f'"contradictions": ["any finding that contradicts a wiki claim"]}}')
+    text = _llm_call(prompt, timeout=1800, cmd=scout_cmd())  # agentic turns run long; --max-turns is the bound
+    findings = _json(text)
+    if not isinstance(findings, dict) or "candidates" not in findings:
+        raise LLMError(f"agentic scout returned unparseable output (len {len(text)}); "
+                       f"refusing to log a false 0-candidate night")
+    return findings
+
+
 def scout(n_queries=4):
     ctx = ("=== OVERVIEW ===\n" + _read("overview.md") +
            "\n\n=== ANTI-PATTERNS (avoid) ===\n" + _read("patterns/META-LESSONS.md")[:2500] +
            "\n\n=== DATA WE OWN (prefer ideas buildable on these) ===\n" + _read("DATA_CATALOG.md") +
-           "\n\n=== ALREADY TESTED / SURFACED (recent; older omitted) ===\n" + _read_tail("index.md", 12_000))
+           "\n\n=== ALREADY TESTED / SURFACED (recent; older omitted) ===\n" + _read_tail("index.md", 12_000)
+           + _diversity_brief())
+    # Stage 3: agentic path (SCOUT_AGENTIC=1) — Fable-5 drives the MCP itself; same candidates.md
+    # contract out, so the whole downstream (dedup/closed-family/theme-cap/gate stack) is unchanged.
+    if _agentic_enabled():
+        from agent.config import SCOUT_MODEL
+        findings = _scout_agentic(ctx, n_queries)
+        _ingest([f"agentic-scout via {SCOUT_MODEL}"], findings)
+        return findings
     # 1. generate targeted search queries aimed at wiki gaps / untested promising directions
     q_raw = _pi(f"{ctx}\n\nYou are a quant research scout. Based on the wiki's UNTESTED promising "
                 f"directions and gaps, produce {n_queries} web-search queries that would surface NEW, "

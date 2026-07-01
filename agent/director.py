@@ -69,6 +69,31 @@ def _propose_via_arm(rng, weights=None) -> tuple[dict, str, list[str]]:
     return propose(), "explore", []
 
 
+_PLAN_MIX = 0.30  # night_plan influence; the bandit keeps >=70% + its hard floors (never LLM-only)
+
+
+def _blend_night_plan(weights):
+    """Stage 4 (tasks/FABLE5_ORCHESTRATION_PLAN.md): if a FRESH night_plan.json exists, blend its
+    advisory arm_bias into the bandit weights (convex mix), then RE-APPLY the bandit floors so the 25%
+    explore floor + per-arm eps can never be starved — the planner MODULATES the empirically-fit bandit,
+    it never replaces it. Fail-open: no/stale/garbled plan (or NIGHT_PLANNER unset) => weights unchanged."""
+    try:
+        from agent import night_plan
+        plan = night_plan.read_plan()
+        if not plan:
+            return weights
+        bias = plan.get("arm_bias") or {}
+        w = dict(weights)
+        blended = {a: (1 - _PLAN_MIX) * w.get(a, 0.0) + _PLAN_MIX * float(bias.get(a, w.get(a, 0.0)))
+                   for a in bandit.ARMS}
+        floored = bandit._apply_floors(blended)
+        print(f"[director] night_plan blended (mix={_PLAN_MIX}): {str(plan.get('rationale', ''))[:70]}")
+        return tuple((a, floored[a]) for a in bandit.ARMS)
+    except Exception as e:
+        print(f"[director] night_plan blend skipped ({type(e).__name__}: {str(e)[:80]})")
+        return weights
+
+
 def _norm(t: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (t or "").lower())[:40]
 
@@ -134,6 +159,7 @@ def top_up(target: int = TARGET, max_new: int = 4) -> dict:
         need = target - st.get("queued", 0)
         rng = random.Random()
         weights = bandit.arm_weights()   # data-driven Thompson allocation, fit ONCE per top-up
+        weights = _blend_night_plan(weights)   # Stage 4: advisory Fable-5 modulation (fail-open to bandit)
         print(f"[director] arm allocation: {bandit.format_alloc(weights)}")
         for _ in range(min(need, max_new) * 3):  # extra tries to find DIVERSE ideas
             if added >= min(need, max_new):

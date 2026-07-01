@@ -167,11 +167,21 @@ Every external coupling lives in **one file**, `crucible_paths.py`, all env-over
 | `CRUCIBLE_SECRETS` | `~/.atlas-secrets.json` | JSON with `telegram_bot_token`, `telegram_chat_id`, `fred_api_key` (all optional) |
 | `CRUCIBLE_DEPLOY` | `/root/atlas` | paper-trading execution host; **`""` = research-only mode** (recommended start) |
 | `CRUCIBLE_BROKER` | `alpaca` | broker label passed to the execution host |
-| `FORGE_MODEL` | policy file → failsafe | LLM model for propose/codegen/scout |
+| `FORGE_MODEL` | policy file → failsafe | LLM model for propose/codegen/scout (the O(strategies) path — keep on the $0 model) |
 | `FORGE_THINKING` | pi default | LLM effort: `low` `medium` `high` `xhigh` `max` `ultracode` |
-| `MODEL_POLICY` | `/root/.pi/model-policy.json` | optional central model-tier JSON; absent → safe failsafe |
+| `MODEL_POLICY` | `/root/.pi/model-policy.json` | optional central model-tier JSON; absent → safe failsafe. Reference: `examples/model-policy.json` |
+| `SCOUT_AGENTIC` | `0` (off) | `1` = the scout runs **agentically** (tools ON, drives the crucible-research MCP itself) instead of the tool-less two-call path |
+| `FORGE_SCOUT_MODEL` / `FORGE_SCOUT_TIER` | `scout` tier → `FORGE_MODEL` | model for the agentic scout; absent tier → the $0 forge model (opt Fable-5 in via the policy `scout` tier) |
+| `NIGHT_PLANNER` | `0` (off) | `1` = run the advisory night-planner pre-forge; `director` blends its `arm_bias` into the bandit (floors preserved, fail-open) |
+| `FORGE_PLANNER_MODEL` / `FORGE_PLANNER_TIER` | `planner` tier → `FORGE_MODEL` | model for the night-planner (one O(nights) call); absent tier → the $0 forge model |
 | `FRED_API_KEY` | from secrets file | FRED macro-data adapter |
 | `BOREAS_RESEARCH` | `/root/boreas/research` | optional external TSMOM hedge-leg (`trend_returns` adapter) |
+
+The **agentic scout** (`SCOUT_AGENTIC=1`) and **night-planner** (`NIGHT_PLANNER=1`) are the two
+cost-routed **orchestration** roles from `tasks/FABLE5_ORCHESTRATION_PLAN.md`: Fable-5 is confined to
+them via the `scout`/`planner` tiers in `MODEL_POLICY`, while `propose`/`codegen` stay on the `frontier`
+($0) tier. Both are **off by default and reversible** — unset the flag (or repoint the tier to the $0
+model) to revert. Codegen never becomes agentic (`llm_cmd()` stays `--no-tools`).
 
 ### LLM backend
 

@@ -56,3 +56,51 @@ def llm_cmd() -> list[str]:
 # Back-comat alias: some callers/tests still import the historical name. Single source of truth
 # is llm_cmd(); this alias must never diverge from it.
 pi_cmd = llm_cmd
+
+
+# ── Fable-5 orchestration tiers (tasks/FABLE5_ORCHESTRATION_PLAN.md) ────────────────────────────────
+# The forge's O(strategies) path (propose/codegen) stays on MODEL above (frontier failsafe = $0 Max).
+# Fable-5 is confined to two O(nights) ORCHESTRATION roles, each routed via its own MODEL_POLICY tier
+# so cost is opt-in by a single JSON key and reversible by removing it. Absent the tier/env, both fall
+# back to MODEL (the same $0 model as everything else) — the code ships DARK at $0.
+#   scout   -> the agentic (tools-ON) scout turn (Stage 2/3), FORGE_SCOUT_MODEL / tier 'scout'
+#   planner -> the tool-less night-planner (Stage 4),        FORGE_PLANNER_MODEL / tier 'planner'
+SCOUT_MODEL = os.environ.get("FORGE_SCOUT_MODEL") or _policy_model(
+    os.environ.get("FORGE_SCOUT_TIER", "scout"), failsafe=MODEL)
+PLANNER_MODEL = os.environ.get("FORGE_PLANNER_MODEL") or _policy_model(
+    os.environ.get("FORGE_PLANNER_TIER", "planner"), failsafe=MODEL)
+
+# The agentic scout READS external sources via the existing crucible-research MCP (mcp/server.py) and
+# emits candidate TEXT — it has NO strategy module to execute, so the --no-tools codegen-crash rationale
+# does not apply. Tools are ALLOWLISTED to the read-only research surface and the turn is hard-capped.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCOUT_MCP = os.environ.get("FORGE_SCOUT_MCP") or os.path.join(_REPO_ROOT, "mcp", "run.sh")
+SCOUT_TOOLS = ("x_search", "web_search", "research_search", "scrape_url", "extract_url")
+SCOUT_MAX_TURNS = int(os.environ.get("FORGE_SCOUT_MAX_TURNS", "12"))
+
+
+def scout_cmd() -> list[str]:
+    """summon invocation for the AGENTIC scout — the ONE place tools are enabled (Stage 2).
+
+    A SIBLING of llm_cmd(), never a replacement: llm_cmd() stays --no-tools byte-for-byte so
+    propose/codegen never run agentically. Differences: tools ON but ALLOWLISTED to the read-only
+    crucible-research MCP (SCOUT_TOOLS), an --mcp-config pointing at that server, and a hard
+    --max-turns cap so an agentic turn cannot loop unboundedly (defence-in-depth — the scout has no
+    backtest to run, unlike the codegen path the --no-tools comment warns about). Routed to
+    SCOUT_MODEL via the 'scout' MODEL_POLICY tier; absent it, falls back to the $0 forge MODEL.
+
+    ⚠ FLAG SPELLINGS ASSUMED from the pi flag surface summon succeeded (--mcp-config / --tools /
+    --max-turns). VERIFY against `summon --help` on the forge box before enabling SCOUT_AGENTIC — the
+    agentic path is opt-in and default-OFF precisely so an unverified flag can never break a night."""
+    return ["summon", "-p", "--model", SCOUT_MODEL, *_thinking_args(),
+            "--mcp-config", SCOUT_MCP, "--tools", ",".join(SCOUT_TOOLS),
+            "--max-turns", str(SCOUT_MAX_TURNS),
+            "--no-context-files", "--system-prompt", SYS, "--mode", "json"]
+
+
+def planner_cmd() -> list[str]:
+    """Tool-less summon invocation for the night-planner (Stage 4). Identical discipline to llm_cmd()
+    (--no-tools PURE generation) but routed to PLANNER_MODEL via the 'planner' MODEL_POLICY tier, so
+    Fable-5 orchestration cost stays O(nights). Absent the tier => falls back to the $0 forge MODEL."""
+    return ["summon", "-p", "--model", PLANNER_MODEL, *_thinking_args(), "--no-tools",
+            "--no-context-files", "--system-prompt", SYS, "--mode", "json"]

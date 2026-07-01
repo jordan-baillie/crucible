@@ -1,0 +1,10 @@
+{
+  "_comment": "Reference MODEL_POLICY (crucible_paths.MODEL_POLICY, default /root/.pi/model-policy.json). config._policy_model() reads tiers[<tier>]; anything missing FAILS SAFE to the forge MODEL. Copy this to the MODEL_POLICY path to opt Fable-5 in for the two ORCHESTRATION roles ONLY. Cost-routing rule (tasks/FABLE5_ORCHESTRATION_PLAN.md): keep 'frontier' on the $0-Max model — it is the O(strategies) propose/codegen path. Fable-5 is O(nights): 'scout' (agentic scout, SCOUT_AGENTIC=1) and 'planner' (night-planner, NIGHT_PLANNER=1). Remove the scout/planner keys (or repoint them to the $0 model) to revert to $0 with a one-line diff. NEVER point 'frontier' at Fable-5 — that moves all codegen onto paid credits.",
+  "tiers": {
+    "frontier": "claude-opus-4-8",
+    "standard": "claude-opus-4-8",
+    "fast": "claude-haiku-4-5-20251001",
+    "scout": "claude-fable-5",
+    "planner": "claude-fable-5"
+  }
+}

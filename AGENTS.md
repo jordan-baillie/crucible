@@ -17,7 +17,7 @@ the rules you must not break.
 | `sdk/` (rest) | `wiki.py`, `queue.py` + `locks.py` (multi-agent `FileLock` coordination), `notify.py`, `cost_model.py`. |
 | `vendor/research_integrity/` | The statistical rails package: CPCV, Deflated Sharpe, PBO, the write-once holdout ledger, the rising FDR bar. |
 | `agent/` | The loop: `propose` → `codegen` → `sandbox` → `run_worker`; plus `director` (queue), `elite` (MAP-Elites pool), `triage` (runtime-error debugger), `sentinel` / `canary` (monitors), `scout`, `digest` / `morning_report`, `lint`. |
-| `agent/config.py` | **The model seam** — `pi_cmd()` is the single LLM invocation. |
+| `agent/config.py` | **The model seam** — `llm_cmd()` (propose/codegen/planner, `--no-tools`) + the tools-ON sibling `scout_cmd()` + tool-less `planner_cmd()`; all route via `MODEL_POLICY` tiers. |
 | `live/deploy.py` | PASS → Atlas paper-book bridge (the cross-repo seam; see its docstring). |
 | `forward/` | Forward-validation tracks + stage-2 tools (`mcpt.py`, `generalize.py`). |
 | `strategies/` | **Generated** `auto_*.py` strategy modules, kept as experiment evidence. Never hand-edit or hand-add. |
@@ -44,6 +44,10 @@ All external coupling is in `crucible_paths.py`, env-overridable. The ones you'l
 - `FORGE_MODEL` — LLM for propose/codegen/scout (else `MODEL_POLICY` tiers → failsafe).
 - `CRUCIBLE_DEPLOY` — execution host path; **`""` = research-only (start here).**
 - `CRUCIBLE_WIKI` — the research wiki (default `/root/research-wiki`). **External: not in this repo.**
+- Fable-5 orchestration (`tasks/FABLE5_ORCHESTRATION_PLAN.md`, off by default): `SCOUT_AGENTIC=1`
+  (agentic scout via the MCP), `NIGHT_PLANNER=1` (advisory bandit-modulating planner). Fable-5 is
+  cost-routed to the `scout`/`planner` `MODEL_POLICY` tiers only (`examples/model-policy.json`);
+  `frontier` (propose/codegen) stays on the $0 model.
 
 ## Never break these (invariants)
 - **The gate stack is the judge and is non-bypassable.** Never weaken, bypass, or "help"
@@ -51,9 +55,12 @@ All external coupling is in `crucible_paths.py`, env-overridable. The ones you'l
   changing the science — flag it, never do it silently or to make a test pass.
 - **The write-once holdout and the rising FDR bar are sacred.** A config is evaluated once. Do
   not add a re-test path, reset the registry, or reuse a holdout slice.
-- **`agent/config.py::pi_cmd()` is the only LLM invocation.** It deliberately sends
-  `--system-prompt` and `--no-tools` / `--no-context-files` (pure generation, billing routing).
-  Don't add a second LLM call path or strip those flags.
+- **`agent/config.py` is the only LLM seam.** `llm_cmd()` (propose/codegen) and `planner_cmd()` stay
+  `--no-tools` — PURE generation; never strip that flag or make codegen agentic (it once ran the whole
+  backtest in a bash loop → crash). The ONE tools-on sibling is `scout_cmd()` (agentic scout): it lives
+  in the SAME file, is allowlisted to the read-only research MCP, turn-capped, and opt-in
+  (`SCOUT_AGENTIC`) — because it emits candidate *text*, not runnable code. Don't add a second LLM call
+  path outside this file.
 - **The cross-repo seam is frozen** (`live/deploy.py` docstring): `deploy_pass(...)` into
   `atlas.execution.providers`; `data/live/<name>/target.json`; reads back `config/live_strategies.json`.
   Both sides depend on these file shapes — don't change one without the other.

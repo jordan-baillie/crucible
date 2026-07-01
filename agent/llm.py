@@ -41,20 +41,27 @@ def healthcheck() -> None:
         raise LLMError(f"healthcheck returned no usable text: {out!r:.80}")
 
 
-def call(prompt: str, timeout: int = 900) -> str:
-    """One pi CLI call -> assistant text. Salvages partial output on timeout
+def call(prompt: str, timeout: int = 900, cmd: list[str] | None = None) -> str:
+    """One summon CLI call -> assistant text. Salvages partial output on timeout
     (long generations are still usually complete when the stream is cut).
     900s default: Fable-5 codegen measured 154-367s over 18 production runs
     (2026-06-10/11) and Anthropic's Fable-5 guide says individual turns run
     longer by default — the old 420s left ~50s headroom on the slowest run and
     the salvage path was silently converting near-timeouts into truncated code
-    (-> false consistency failures -> wasted fix() calls)."""
+    (-> false consistency failures -> wasted fix() calls).
+
+    `cmd` defaults to the tool-less config.llm_cmd() seam (propose/codegen/planner).
+    Pass config.scout_cmd() for an AGENTIC turn (tools ON) with a longer `timeout` —
+    same stream-parse + fail-loud discipline either way, one code path."""
+    cmd = cmd or llm_cmd()
     try:
-        r = subprocess.run(llm_cmd(), input=prompt, capture_output=True, text=True,
+        r = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
                            timeout=timeout)
         text = assistant_text(r.stdout)
         # LOUD on hard failure: a provider error with no salvageable text must raise, not
         # return '' (which scout/propose silently treat as 'no candidates' -> idle forge).
+        # A Fable-5 stop_reason:'refusal' (higher on this model) surfaces the same way — an
+        # empty completion -> the caller's parse guard raises LLMError, never a false 0-result.
         err = stream_error(r.stdout)
         if err and not text.strip():
             raise LLMError(err)

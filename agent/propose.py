@@ -101,6 +101,17 @@ def _focus() -> str:
     return _FOCUSES.get(os.environ.get("CRUCIBLE_FOCUS", "").strip().lower(), "")
 
 
+def _diversity_brief() -> str:
+    """Generator-only steer toward UNSPENT family-space (agent.joint_state.brief) — the already
+    closed / live / heavily-exploited families to avoid. '' when there is nothing to steer against.
+    Same category as _focus(): injected into the prompt, the rails / gate stack are untouched."""
+    try:
+        from agent.joint_state import brief
+        return brief()
+    except Exception:
+        return ""
+
+
 def _read_tail(p, max_chars: int):
     """E5: growing files (index, candidates) are read NEWEST-LAST and capped — prompt size must
     not rise monotonically with project history (cost, latency, call-timeout risk; the director
@@ -123,7 +134,7 @@ def propose() -> dict:
         "\n\n=== EXISTING EXPERIMENTS (do not duplicate; newest last, older omitted) ===\n" + _read_tail("index.md", 12_000) +
         "\n\n=== DATA WE OWN / CAN USE (build ONLY on these; anything else is DATA-GATED -> Gate-0 FAIL) ===\n" + _read("DATA_CATALOG.md") +
         "\n\n=== WEB-SCOUTED CANDIDATES (fresh external ideas — prefer a strong one of these) ===\n" + _read_tail("candidates.md", 8_000)
-        + _focus()
+        + _focus() + _diversity_brief()
     )
     prompt = f"""{context}
 
@@ -154,7 +165,7 @@ Return ONLY a JSON object:
 
 def _ctx() -> str:
     return ("=== ANTI-PATTERNS (obey) ===\n" + _read("patterns/META-LESSONS.md")[:2000] +
-            "\n\n=== DATA WE OWN ===\n" + _read("DATA_CATALOG.md")[:1500] + _focus())
+            "\n\n=== DATA WE OWN ===\n" + _read("DATA_CATALOG.md")[:1500] + _focus() + _diversity_brief())
 
 
 # The full proposal JSON contract — IDENTICAL for every arm (explore/refine/orthogonal/crossover);

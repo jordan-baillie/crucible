@@ -9,6 +9,17 @@
 > Every load-bearing fact below (`model-policy.json` absent, `summon` flags unverifiable here, the
 > bandit constants, the Atlas read seam) was checked in this repo, not taken on faith.
 
+> **STATUS — IMPLEMENTED (2026-07-01), off by default.** Stages 0–4 shipped; the full suite passes
+> (`pytest -m "not network"`, minus one pre-existing date-driven `test_gates` failure unrelated to
+> this change). Everything is $0 and inert until opted in via `MODEL_POLICY` + `SCOUT_AGENTIC=1` /
+> `NIGHT_PLANNER=1`. Map: Stage 0 `agent/joint_state.py` (+ brief wired into `scout.py`/`propose.py`);
+> Stage 1 `examples/model-policy.json` + README/AGENTS docs; Stage 2 `config.scout_cmd()`/`planner_cmd()`
+> + `llm.call(cmd=…)`; Stage 3 `scout._scout_agentic()`; Stage 4 `agent/night_plan.py` +
+> `director._blend_night_plan()` + the reversible `night-planner.conf` drop-in. Tests:
+> `test_fable5_config.py`, `test_joint_state.py`, `test_night_plan.py`. **Before enabling Stage 2/3 on
+> the forge box, verify `summon`'s `--mcp-config`/`--tools`/`--max-turns` flag spellings against
+> `summon --help` (the one thing not verifiable in the build env).**
+
 ---
 
 ## 0. Honest grounding on the premise (read this first)
