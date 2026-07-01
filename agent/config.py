@@ -56,3 +56,49 @@ def llm_cmd() -> list[str]:
 # Back-comat alias: some callers/tests still import the historical name. Single source of truth
 # is llm_cmd(); this alias must never diverge from it.
 pi_cmd = llm_cmd
+
+
+# ── Agentic scout (Fable-5) ─────────────────────────────────────────────────────────────────────
+# The ONE agentic forge path: a scout turn where the model drives the crucible-research MCP itself
+# (x/web/paper search + scrape/extract) instead of the forge pre-fetching sources. OFF by default —
+# no forge code calls scout_cmd() yet (the nightly scout stays tool-less via llm_cmd); this is the
+# config surface the agentic scout switches on once summon ships the three flags below (it now does).
+#
+# summon's real flag names (verified against `summon --help`): --mcp-config / --tools / --max-turns.
+def _default_scout_mcp() -> str:
+    """Default --mcp-config target: the repo's crucible-research MCP launcher (stdio). summon accepts
+    either this bare executable OR a {"mcpServers": {...}} JSON file, so FORGE_SCOUT_MCP can point at
+    whatever a given box prefers. Graceful: never raises at import (mirrors _policy_model)."""
+    try:
+        import crucible_paths
+        return str(crucible_paths.ROOT / "mcp" / "run.sh")
+    except Exception:
+        return "mcp/run.sh"
+
+
+# summon --mcp-config target (the crucible-research MCP). FORGE_SCOUT_MCP overrides per box.
+SCOUT_MCP = os.environ.get("FORGE_SCOUT_MCP") or _default_scout_mcp()
+# summon --tools allowlist. HARD SAFETY BOUNDARY: read-only research tools ONLY — never bash/write/
+# edit/exec. summon registers the MCP tools then activates only these names (the rest, incl. the X
+# helpers x_user_tweets/x_user_info/x_balance and all built-ins, stay inert).
+SCOUT_TOOLS = ["x_search", "web_search", "research_search", "scrape_url", "extract_url"]
+# summon --max-turns: hard cap so an agentic tool loop can never run unbounded (the key backstop).
+SCOUT_MAX_TURNS = int(os.environ.get("FORGE_SCOUT_MAX_TURNS", "12"))
+
+
+def scout_cmd() -> list[str]:
+    """The summon invocation for the AGENTIC scout turn (Fable-5 drives the crucible-research MCP).
+
+    Differs from llm_cmd() in exactly the agentic dimension — it ADDS the three summon agentic flags
+    and, critically, OMITS --no-tools (that flag is what makes llm_cmd() a pure non-agentic call):
+      --mcp-config <path>   load the crucible-research MCP (stdio) so the model can call its tools
+      --tools <allowlist>   restrict the turn to read-only research tools (no bash/write/edit/exec)
+      --max-turns <n>       hard cap so a tool loop can't run unbounded
+    Model routing (MODEL, incl. claude-fable-5 via OAuth), system prompt, --no-context-files, and the
+    --mode json stream contract are IDENTICAL to llm_cmd(), so agent.llm.assistant_text/stream_error
+    parse the agentic stream unchanged."""
+    return ["summon", "-p", "--model", MODEL, *_thinking_args(),
+            "--mcp-config", SCOUT_MCP,
+            "--tools", ",".join(SCOUT_TOOLS),
+            "--max-turns", str(SCOUT_MAX_TURNS),
+            "--no-context-files", "--system-prompt", SYS, "--mode", "json"]
